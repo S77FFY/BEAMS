@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="app-repo" content="BEAMS">
-<meta name="app-version" content="0.1.1">
+<meta name="app-version" content="0.1.2">
 <meta name="theme-color" content="#16171a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1246,6 +1246,7 @@ function rotate(dir) {
   if (tgt === 'sel') liftSelected();
   if (tgt === 'armed') { game.trayRot[game.armed] = ((game.trayRot[game.armed] + dir) % 8 + 8) % 8; sfx.rot(); renderTray(); return; }
   const p = game.pending; p.r = ((p.r + dir) % 8 + 8) % 8;
+  if (B.P[p.t].rot === 4 && dir > 0 && p.r >= 4) p.r -= 4; else if (B.P[p.t].rot === 4 && dir < 0 && p.r >= 4) p.r -= 4;
   if (!p.orig) game.trayRot[p.t] = p.r;
   sfx.rot(); previewTrace(); renderTray();
 }
@@ -1321,13 +1322,16 @@ function dragEnd() {
     return;
   }
   if (drag.from === 'pending') {
-    if (!drag.moved) { commitPending(); return; } // tap the staged piece again to place it
+    if (!drag.moved) { game.pending = drag.pend || game.pending; rotate(1); return; } // tap the staged piece to turn it; PLACE commits
     if (at) { game.pending = Object.assign(drag.pend, { x: at.x, y: at.y }); }
     else { game.pending = drag.pend; cancelPending(); return; } // dragged off the board: put it back
     previewTrace(); renderTray(); return;
   }
   // from a placed piece
-  if (!drag.moved) { game.sel = game.sel === drag.idx ? null : drag.idx; game.armed = null; renderTray(); return; }
+  if (!drag.moved) { // first tap selects; tapping it again lifts it into preview and turns it
+    if (game.sel === drag.idx && B.P[game.items[drag.idx].t].rot > 1) { rotate(1); return; }
+    game.sel = drag.idx; game.armed = null; renderTray(); return;
+  }
   game.undo.push(JSON.stringify(game.mine.concat([drag.orig])));
   if (at) { game.mine.push({ t: drag.type, x: at.x, y: at.y, r: drag.r }); sfx.place(); commit(); }
   else if (!overBoard) { sfx.place(); commit(); } // dragged off the board: back to the tray (a commit like any other)
