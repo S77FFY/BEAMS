@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="app-repo" content="BEAMS">
-<meta name="app-version" content="0.1.2">
+<meta name="app-version" content="0.1.3">
 <meta name="theme-color" content="#16171a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -100,7 +100,7 @@ button:focus-visible{outline:2px solid var(--neon);outline-offset:2px}
 .chip.empty{opacity:.3}
 .chip.armed{border-color:var(--neon);box-shadow:0 0 0 1px rgba(64,224,255,.25) inset,0 0 14px rgba(64,224,255,.15)}
 .chip .new{position:absolute;top:4px;left:6px;width:6px;height:6px;border-radius:50%;background:var(--neon);box-shadow:0 0 6px var(--neon)}
-.ctrl{display:grid;grid-template-columns:46px 46px 46px 46px 1fr;gap:7px}
+.ctrl{display:grid;grid-template-columns:52px 52px 1fr;gap:8px}
 .cb{height:52px;border:1px solid #2b2e34;border-radius:12px;font-size:20px;color:var(--ink);display:grid;place-items:center}
 .cb:disabled{opacity:.3}
 .cb:active{background:#23262b}
@@ -188,8 +188,6 @@ button:focus-visible{outline:2px solid var(--neon);outline-offset:2px}
     <div class="status" id="status"></div>
     <div class="tray" id="tray"></div>
     <div class="ctrl">
-      <button class="cb" id="b-rotl" aria-label="Turn anticlockwise">⟲</button>
-      <button class="cb" id="b-rotr" aria-label="Turn clockwise">⟳</button>
       <button class="cb" id="b-undo" aria-label="Undo">↶</button>
       <button class="cb" id="b-reset" aria-label="Restart level">↻</button>
       <button class="cb place" id="b-place">PLACE</button>
@@ -1164,14 +1162,14 @@ function renderTray() {
   const el = $('#tray'); el.innerHTML = '';
   Object.keys(game.L.tray).forEach(type => {
     const left = trayLeft(type);
-    const d = document.createElement('div'); d.className = 'chip' + (left ? '' : ' empty') + (game.armed === type ? ' armed' : ''); d.dataset.type = type;
-    const c = document.createElement('canvas'); d.appendChild(c); icon(c, type, game.trayRot[type]);
+    const d = document.createElement('div'); const stagedHere = game.pending && !game.pending.orig && game.pending.t === type;
+    d.className = 'chip' + (left || stagedHere ? '' : ' empty') + (game.armed === type ? ' armed' : ''); d.dataset.type = type;
+    const c = document.createElement('canvas'); d.appendChild(c); icon(c, type, stagedHere ? game.pending.r : game.trayRot[type]);
     d.insertAdjacentHTML('beforeend', '<div class="cn">' + B.P[type].name + '</div><div class="cc">×' + left + '</div>' + (S.seen[type] ? '' : '<i class="new"></i>'));
     el.appendChild(d);
   });
   const tgt = rotTarget();
-  $('#b-rotl').disabled = $('#b-rotr').disabled = !tgt;
-  $('#b-undo').disabled = !game.undo.length && !game.pending;
+  $('#b-undo').disabled = !game.undo.length && !game.pending && !game.armed;
   $('#b-reset').disabled = !game.mine.length && !game.alarms && !game.pending;
   const pb = $('#b-place'); pb.disabled = !game.pending; pb.classList.toggle('ready', !!game.pending);
 }
@@ -1314,9 +1312,15 @@ function dragEnd() {
   drag.on = false; ghostCv.style.display = 'none';
   const at = drag.preview, overBoard = !!drag.ghost; drag.preview = null; drag.ghost = null;
   if (drag.from === 'tray') {
-    if (!drag.moved) { // tap: arm / disarm this piece
+    if (!drag.moved) { // first tap picks the piece up; each further tap turns it
+      if (game.armed === drag.type) {
+        if (game.pending && !game.pending.orig && game.pending.t === drag.type) { rotate(1); return; }
+        const D = B.P[drag.type].rot; if (D === 1) return;
+        let r = (game.trayRot[drag.type] + 1) % 8; if (D === 4 && r >= 4) r -= 4;
+        game.trayRot[drag.type] = r; sfx.rot(); renderTray(); return;
+      }
       if (game.pending && !game.pending.orig) game.pending = null; else if (game.pending) cancelPending();
-      game.armed = game.armed === drag.type ? null : drag.type; game.sel = null; retrace(); renderTray(); return;
+      game.armed = drag.type; game.sel = null; retrace(); renderTray(); return;
     }
     if (at) { game.pending = null; placeNow(drag.type, at.x, at.y, drag.r); } else previewTrace();
     return;
@@ -1342,7 +1346,8 @@ $('#tray').addEventListener('pointerdown', e => {
   const type = ch.dataset.type;
   const openLab = () => { const ent = LAB.find(x => x.id === type); if (ent) { buzz(10); drag.on = false; leaveGame(); openBench(ent); } };
   clearTimeout(drag.lp);
-  if (!trayLeft(type)) { drag.lp = setTimeout(openLab, 550); return; }
+  const staged = game.pending && !game.pending.orig && game.pending.t === type;
+  if (!trayLeft(type) && !staged) { drag.lp = setTimeout(openLab, 550); return; }
   Object.assign(drag, { on: true, from: 'tray', type, sx: e.clientX, sy: e.clientY, moved: false, r: game.trayRot[type] });
   drag.lp = setTimeout(() => { if (drag.on && !drag.moved) openLab(); }, 550);
   e.preventDefault();
@@ -1372,11 +1377,10 @@ window.addEventListener('pointercancel', () => {
   drag.preview = null; drag.ghost = null; retrace(); renderTray();
 });
 
-$('#b-rotl').addEventListener('click', () => rotate(-1));
-$('#b-rotr').addEventListener('click', () => rotate(1));
 $('#b-place').addEventListener('click', commitPending);
 $('#b-undo').addEventListener('click', () => {
   if (game.pending) return cancelPending();
+  if (game.armed && !game.undo.length) { game.armed = null; return renderTray(); }
   if (!game.undo.length) return;
   game.mine = JSON.parse(game.undo.pop()); game.sel = null; retrace(); renderTray(); // undo returns to a state already judged, so it raises no alarm
 });
