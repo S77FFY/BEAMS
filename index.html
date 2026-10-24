@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="app-repo" content="BEAMS">
-<meta name="app-version" content="0.1.3">
+<meta name="app-version" content="0.1.4">
 <meta name="theme-color" content="#16171a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -280,20 +280,20 @@ def('microlens', { name: 'Microlens Array', rot: 4, cat: 'lens', f: 0.5,
 
 function thinMirror(id, name, f, desc, h) {
   def(id, { name, rot: 8, cat: 'curved', f, desc,
-    geo: () => [{ k: 'thin', c: v(0, 0), a: v(1, 0), h: h || H, f, kind: 'mirror' }] });
+    geo: () => [{ k: 'thin', c: v(0, 0), a: v(1, 0), h: 0.5, f, kind: 'mirror' }] });  // wide enough to catch a whole beam at 45°
 }
-thinMirror('concavemirror', 'Concave Mirror', 2, 'Reflects parallel light to a focus 2 cells in front. Its back is dark.');
-thinMirror('convexmirror', 'Convex Mirror', -2, 'Reflects light outward, spreading it from a point 2 cells behind.');
-thinMirror('parabolic', 'Parabolic Mirror', 1.5, 'A perfect focusing mirror: parallel light meets 1½ cells in front.', 0.46);
-thinMirror('elliptical', 'Elliptical Mirror', 1, 'Light from a point 2 cells in front is gathered to a point 2 cells in front on the other side of the axis.', 0.46);
+thinMirror('concavemirror', 'Concave Mirror', 2, 'Bounces light like a plane mirror and brings a parallel beam to a focus 2 cells after the bounce. Its back is dark.');
+thinMirror('convexmirror', 'Convex Mirror', -2, 'Bounces light and spreads it, as if it came from a point 2 cells behind the mirror.');
+thinMirror('parabolic', 'Parabolic Mirror', 3, 'A long, perfect focusing mirror: a parallel beam meets 3 cells after the bounce.', 0.46);
+thinMirror('elliptical', 'Elliptical Mirror', 1, 'Point to point: light spreading from a point 2 cells before it gathers again 2 cells after the bounce.', 0.46);
 
 function poly(id, o) { def(id, Object.assign({ cat: 'glass' }, o)); }
 poly('plate', { name: 'Flat Glass Plate', rot: 4, desc: 'Light passes through. Tilted, it slips sideways but keeps its direction.',
   geo: () => [{ k: 'body', pts: [v(-0.09, -H), v(0.09, -H), v(0.09, H), v(-0.09, H)] }] });
-poly('block', { name: 'Tilted Glass Block', rot: 4, desc: 'A thick slab: tilted 45°, it shifts a beam about ¼ cell sideways.',
-  geo: () => [{ k: 'body', pts: [v(-0.24, -H), v(0.24, -H), v(0.24, H), v(-0.24, H)] }] });
-poly('rightprism', { name: 'Right-Angle Prism', rot: 8, desc: 'Light entering the long face is totally reflected twice and sent back, flipped.',
-  geo: () => [{ k: 'body', pts: [v(-0.21, -H), v(0.21, 0), v(-0.21, H)] }] });
+poly('block', { name: 'Tilted Glass Block', rot: 4, desc: 'A thick slab. Square on, light goes straight through; tilted 45°, it nudges a beam ⅕ cell sideways, toward the side the block leans.',
+  geo: () => [{ k: 'body', pts: [v(-0.3, -0.38), v(0.3, -0.38), v(0.3, 0.38), v(-0.3, 0.38)] }] });
+poly('rightprism', { name: 'Right-Angle Prism', rot: 8, desc: 'A glass mirror that only works one way: light entering a short face is totally reflected off the long face and turned 90°.',
+  geo: () => [{ k: 'body', pts: [v(0, -H), v(H, 0), v(0, H)] }] });
 poly('prism', { name: 'Dispersion Prism', rot: 8, desc: 'Bends light; splits white into red, green and blue at different angles.',
   geo: () => [{ k: 'body', disp: true, pts: [v(0, -0.4), v(0.3464, 0.2), v(-0.3464, 0.2)] }] });
 
@@ -303,6 +303,8 @@ def('slit', { name: 'Slit', rot: 4, cat: 'fixed', desc: 'Opaque screen with a pi
   geo: () => [{ k: 'seg', a: v(0, -0.5), b: v(0, -0.09), act: 'block' }, { k: 'seg', a: v(0, 0.09), b: v(0, 0.5), act: 'block' }] });
 def('slot', { name: 'Narrow Slot', rot: 4, cat: 'fixed', desc: 'Opaque screen with a gap ⅓ cell wide.',
   geo: () => [{ k: 'seg', a: v(0, -0.5), b: v(0, -0.17), act: 'block' }, { k: 'seg', a: v(0, 0.17), b: v(0, 0.5), act: 'block' }] });
+def('jog', { name: 'Offset Pinhole', rot: 8, cat: 'fixed', desc: 'Opaque screen with a pinhole ⅕ cell off centre. A straight beam misses it.',
+  geo: () => [{ k: 'seg', a: v(0, -0.5), b: v(0, 0.13), act: 'block' }, { k: 'seg', a: v(0, 0.27), b: v(0, 0.5), act: 'block' }] });
 def('laser', { name: 'Laser', rot: 8, cat: 'source', geo: () => [{ k: 'circ', c: v(0, 0), r: 0.27, act: 'block' }] });
 def('bundle', { name: 'Beam Emitter', rot: 8, cat: 'source', geo: () => [{ k: 'circ', c: v(-0.06, 0), r: 0.26, act: 'block' }] });
 def('bulb', { name: 'Bulb', rot: 8, cat: 'source', geo: () => [{ k: 'circ', c: v(0, 0), r: 0.14, act: 'block' }] });
@@ -316,7 +318,7 @@ function emit(it) {
   const rays = [];
   if (it.t === 'laser') rays.push({ o: add(c, mul(d, 0.3)), d, mask });
   else if (it.t === 'bundle') {
-    const n = it.n || 5, w = 0.28;
+    const n = it.n || 5, w = it.w || 0.28;
     for (let i = 0; i < n; i++) { const off = n === 1 ? 0 : -w + 2 * w * i / (n - 1); rays.push({ o: add(add(c, mul(d, 0.34)), mul(p, off)), d, mask }); }
   } else if (it.t === 'bulb') {
     const n = it.n || 5, sp = (it.spread || 7) * Math.PI / 180;
@@ -382,41 +384,56 @@ function trace(level, items, base) {
   const targets = []; items.forEach((it, i) => { if (it.t === 'target') targets.push(i); });
   const queue = [];
   items.forEach((it, i) => { if (SOURCE_TYPES[it.t]) for (const r of emit(it)) queue.push(Object.assign(r, { src: i, inBody: null, skip: null })); });
-  const out = [], lit = {}, rejected = {};
+  const out = [], lit = {}, rejected = {}, focusHits = {};
   let strays = 0, spawned = queue.length, overflow = false;
   const maxRays = level.maxRays || MAX_RAYS;
   while (queue.length) {
     const ray = queue.shift();
     let o = ray.o, d = norm(ray.d), mask = ray.mask, inBody = ray.inBody, skip = ray.skip;
-    const pts = [o]; let end = null, n = 0;
+    const pts = [o]; let end = null, n = 0, jumpTo = null;
     while (!end) {
       if (++n > MAX_SEG) { end = { type: 'lost' }; break; }
       // board exit
       let tx = Infinity;
       if (d.x > 1e-12) tx = Math.min(tx, (W - o.x) / d.x); else if (d.x < -1e-12) tx = Math.min(tx, (0 - o.x) / d.x);
       if (d.y > 1e-12) tx = Math.min(tx, (Hh - o.y) / d.y); else if (d.y < -1e-12) tx = Math.min(tx, (0 - o.y) / d.y);
-      let best = null, bt = tx;
+      let best = null, bt = tx, edgeOn = false;
       for (const c of cols) {
         if (c === skip) continue;
         let t = null;
         if (c.k === 'seg') {
           if (c.act === 'refr' && inBody && c.body !== inBody && c.body.id !== inBody.id) continue;
           t = hitSeg(o, d, c);
+          if (t === null && (c.act === 'mirror' || c.act === 'split')) { // running along a mirror edge-on: the strip blocks it
+            const e = sub(c.b, c.a), el = Math.hypot(e.x, e.y), cr = Math.abs(d.x * e.y - d.y * e.x) / el;
+            if (cr < 1e-6) {
+              const off = Math.abs((c.a.x - o.x) * d.y - (c.a.y - o.y) * d.x);
+              const ta = dot(sub(c.a, o), d), tb = dot(sub(c.b, o), d), tn = Math.min(ta, tb);
+              if (off < 0.03 && tn > EPS && tn < bt) { bt = tn; best = c; edgeOn = true; }
+            }
+            continue;
+          }
         } else if (c.k === 'circ') t = hitCirc(o, d, c.c, c.r);
         else if (c.k === 'thin') {
-          const da = dot(d, c.a); if (Math.abs(da) < 1e-9) continue;
+          const da = dot(d, c.a);
+          if (Math.abs(da) < 1e-6) { // seen edge-on: a solid strip that stops rays running along it
+            const tc = dot(sub(c.c, o), d) - c.h, q = add(o, mul(d, tc + c.h));
+            if (tc > EPS && Math.abs(dot(sub(q, c.c), c.a)) < 0.06 && tc < bt) { bt = tc; best = c; edgeOn = true; }
+            continue;
+          }
           t = dot(sub(c.c, o), c.a) / da; if (!(t > EPS)) t = null;
           else { const q = add(o, mul(d, t)); if (Math.abs(dot(sub(q, c.c), c.p)) > c.h) t = null; }
         } else if (c.k === 'ball') {
           t = dot(sub(c.c, o), d); if (!(t > EPS)) t = null;
           else { const q = add(o, mul(d, t)); if (Math.hypot(q.x - c.c.x, q.y - c.c.y) > c.h) t = null; }
         }
-        if (t !== null && t < bt) { bt = t; best = c; }
+        if (t !== null && t < bt) { bt = t; best = c; edgeOn = false; }
       }
       const q = add(o, mul(d, bt));
       pts.push(q);
       if (!best) { end = { type: 'edge' }; break; }
       const c = best;
+      if (edgeOn) { end = { type: 'block' }; break; }
       if (c.k === 'seg') {
         if (c.act === 'mirror') { const nn = norm(perp(sub(c.b, c.a))); d = reflect(d, nn); }
         else if (c.act === 'split') {
@@ -441,31 +458,43 @@ function trace(level, items, base) {
       } else if (c.k === 'circ') {
         if (c.act === 'target') {
           const tm = MASK[items[c.item].c || 'Y'];
-          if ((mask & ~tm) === 0) { lit[c.item] = (lit[c.item] || 0) | mask; end = { type: 'target', item: c.item }; }
+          if ((mask & ~tm) === 0) { if (items[c.item].s === 'focus') { const k = c.item + ':' + ray.src + ':' + mask; focusHits[k] = (focusHits[k] || 0) + 1; } else lit[c.item] = (lit[c.item] || 0) | mask; end = { type: 'target', item: c.item }; }
           else { rejected[c.item] = 1; end = { type: 'wrong', item: c.item }; }
         } else end = { type: 'block' };
         break;
+      } else if (c.k === 'thin' && edgeOn) { end = { type: 'block' }; break;
       } else if (c.k === 'thin') {
         const y = dot(sub(q, c.c), c.p);
         let ax = c.a;
-        if (Math.abs(dot(d, c.a)) < 0.866) { end = { type: 'block', glance: true }; break; } // too oblique: scattered by the rim
         if (c.kind === 'mirror') {
-          if (dot(d, c.a) > 0) { end = { type: 'block' }; break; } // dark back
-          d = reflect(d, c.a); // now travelling along +a
-        } else if (dot(d, ax) < 0) ax = mul(ax, -1);
-        const da = dot(d, ax), dp = dot(d, c.p);
-        const s = dp / da - y / c.f;
-        d = norm(add(ax, mul(c.p, s)));
+          // curved mirror: bounces like a plane mirror, then focuses f cells along the outgoing beam
+          if (dot(d, c.a) > -0.2) { end = { type: 'block' }; break; } // dark back, or grazing the rim
+          // measure each ray on the plane through the mirror centre square to the outgoing beam, so a mirror
+          // turned 45° still focuses exactly f cells along the beam (rays meet a diagonal mirror at different depths)
+          const d1 = reflect(d, c.a), pp = perp(d1), dep = dot(sub(q, c.c), d1), q0 = sub(q, mul(d1, dep));
+          const yy = dot(sub(q0, c.c), pp);
+          d = norm(add(d1, mul(pp, -yy / c.f)));
+          jumpTo = add(q0, mul(d, dep / dot(d, d1)));
+        } else {
+          if (Math.abs(dot(d, c.a)) < 0.866) { end = { type: 'block', glance: true }; break; } // lens hit too obliquely: scattered by the rim
+          if (dot(d, ax) < 0) ax = mul(ax, -1);
+          const da = dot(d, ax), dp = dot(d, c.p);
+          const s = dp / da - y / c.f;
+          d = norm(add(ax, mul(c.p, s)));
+        }
       } else if (c.k === 'ball') {
         const pp = perp(d), y = dot(sub(q, c.c), pp);
         d = norm(add(d, mul(pp, -y / c.f)));
       }
-      o = q; skip = c;
+      if (jumpTo) { pts.push(jumpTo); o = jumpTo; jumpTo = null; } else o = q;
+      skip = c;
     }
     const stray = !(end.type === 'target' || end.type === 'split');
     if (stray) strays++;
     out.push({ pts, mask, end, stray });
   }
+  // a focus receiver only lights when a whole beam converges on it: every ray that source sends out
+  for (const k in focusHits) { const [ti, si, m] = k.split(':').map(Number); if (focusHits[k] >= emit(items[si]).length) lit[ti] = (lit[ti] || 0) | m; else { rejected[ti] = 1; for (const r of out) if (r.end.type === 'target' && r.end.item === ti && !r.stray) { r.stray = true; strays++; } } }
   let allLit = true;
   for (const ti of targets) { if ((lit[ti] || 0) !== MASK[items[ti].c || 'Y']) allLit = false; }
   const rim = out.filter(r => r.end.type === 'edge').length;
@@ -502,43 +531,53 @@ function rayCells(level, res, opt) {
 
 /* Exhaustive solver over the tray. Returns { min, solutions:[[pieces]], minCost } */
 function solve(L, opts) {
+  // Iterative deepening: try every 1-piece board, then every 2-piece board, ... and stop at the first depth that
+  // has solutions, so the reported minimum is the true fewest-pieces answer (not just the first one a deep dive hits).
   opts = opts || {};
   L = Object.assign({}, L, { maxRays: opts.maxRays || 40 });
   const base = baseItems(L), tray = Object.assign({}, L.tray);
   const bc = { n: base.length, cols: [] }; base.forEach((it, i) => { for (const c of colliders(it, i)) bc.cols.push(c); });
-  const types = Object.keys(tray);
-  const sols = []; let nodes = 0; const limit = opts.limit || 4e6;
-  const seen = new Set();
+  const types = Object.keys(tray), maxDepth = opts.maxDepth || 9, limit = opts.limit || 4e6;
+  const trayTotal = Object.values(tray).reduce((a, b) => a + b, 0);
+  let sols = [], nodes = 0, hitLimit = false, searched = 0;
   function key(pl) { return pl.map(p => p.t + p.x + ',' + p.y + ',' + (P[p.t].rot === 1 ? 0 : p.r % P[p.t].rot)).sort().join('|'); }
-  function rec(placed, left) {
-    if (nodes++ > limit) return;
-    const items = base.concat(placed);
-    const res = trace(L, items, bc);
-    if (res.win) { const k = key(placed); if (!seen.has(k)) { seen.add(k); sols.push(placed.slice()); } return; }
-    if (placed.length >= (opts.maxDepth || 9)) return;
-    const occ = occupied(items), cells = rayCells(L, res, { fast: true });
-    const k0 = key(placed);
-    for (const cell of cells) {
-      if (occ.has(cell)) continue;
-      const [x, y] = cell.split(',').map(Number);
-      for (const t of types) {
-        if (!left[t]) continue;
-        for (let r = 0; r < P[t].rot; r++) {
-          const pc = { t, x, y, r };
-          const nk = key(placed.concat([pc]));
-          if (seen.has('n' + nk)) continue; seen.add('n' + nk);
-          left[t]--; placed.push(pc);
-          rec(placed, left);
-          placed.pop(); left[t]++;
+  for (let D = 1; D <= Math.min(maxDepth, trayTotal); D++) {
+    const seen = new Set(), found = [];
+    const rec = (placed, left) => {
+      if (nodes++ > limit) { hitLimit = true; return; }
+      const items = base.concat(placed);
+      const res = trace(L, items, bc);
+      if (res.win) { const k = key(placed); if (!seen.has(k)) { seen.add(k); found.push(placed.slice()); } return; }
+      if (placed.length >= D) return;
+      const occ = occupied(items), cells = rayCells(L, res, { fast: true });
+      for (const cell of cells) {
+        if (occ.has(cell)) continue;
+        const [x, y] = cell.split(',').map(Number);
+        for (const t of types) {
+          if (!left[t]) continue;
+          for (let r = 0; r < P[t].rot; r++) {
+            const pc = { t, x, y, r };
+            const nk = 'n' + key(placed.concat([pc]));
+            if (seen.has(nk)) continue; seen.add(nk);
+            left[t]--; placed.push(pc);
+            rec(placed, left);
+            placed.pop(); left[t]++;
+            if (hitLimit) return;
+          }
         }
       }
-    }
+    };
+    rec([], Object.assign({}, tray));
+    sols = found;
+    if (hitLimit) break;
+    searched = D;
+    if (found.length) break;
   }
-  rec([], tray);
   let min = Infinity, minCost = Infinity;
   for (const s of sols) min = Math.min(min, s.length);
   for (const s of sols) if (s.length === min) minCost = Math.min(minCost, s.reduce((a, p) => a + 1 + minRot(p.t, p.r), 0));
-  return { min, minCost, count: sols.filter(s => s.length === min).length, total: sols.length, nodes, solutions: sols };
+  // complete: every board up to `searched` pieces was checked, so nothing shorter than `min` exists
+  return { min, minCost, count: sols.filter(s => s.length === min).length, total: sols.length, nodes, solutions: sols, searched, complete: !hitLimit };
 }
 
 /* Fewest alarms any placement order must trigger for a given solution.
@@ -707,11 +746,63 @@ const PACKS = [
     items: [{ t: 'bulb', x: 0, y: 0, r: 0 }, { t: 'slit', x: 5, y: 3, r: 2 }, { t: 'target', x: 0, y: 8 }, { t: 'target', x: 6, y: 5, s: 'focus' }],
     tray: { convex: 3, planoconvex: 1, splitter: 1, mirror: 2 }, sol: [{ t: 'convex', x: 2, y: 0, r: 0 }, { t: 'splitter', x: 5, y: 0, r: 1 }, { t: 'convex', x: 5, y: 1, r: 2 }, { t: 'convex', x: 5, y: 5, r: 2 }, { t: 'mirror', x: 5, y: 8, r: 3 }, { t: 'mirror', x: 6, y: 0, r: 1 }, { t: 'planoconvex', x: 6, y: 2, r: 2 }] },
 ]},
+{ id: 'refract', name: 'REFRACT', sub: 'Glass prisms and tilted blocks', pieces: ['rightprism', 'block'], levels: [
+  { name: "Glass Corner", w: 7, h: 9, items: [{"t":"laser","x":0,"y":1,"r":0},{"t":"target","x":4,"y":6}],
+    tray: {"rightprism":1}, sol: [] },
+  { name: "One Way", w: 7, h: 9, items: [{"t":"laser","x":0,"y":4,"r":0},{"t":"laser","x":6,"y":2,"r":4},{"t":"target","x":3,"y":0},{"t":"target","x":3,"y":8}],
+    tray: {"rightprism":2}, sol: [] },
+  { name: "Nudge", w: 7, h: 9, items: [{"t":"laser","x":0,"y":4,"r":0},{"t":"jog","x":4,"y":4,"r":0},{"t":"target","x":6,"y":4}],
+    tray: {"block":1}, sol: [] },
+  { name: "Lean the Other Way", w: 7, h: 9, items: [{"t":"laser","x":3,"y":1,"r":0},{"t":"mirror","x":4,"y":1,"r":1},{"t":"jog","x":4,"y":5,"r":6},{"t":"target","x":4,"y":8}],
+    tray: {"block":1}, sol: [] },
+  { name: "Staircase", w: 7, h: 9, items: [{"t":"laser","x":2,"y":8,"r":6},{"t":"wall","x":1,"y":3},{"t":"wall","x":4,"y":7},{"t":"wall","x":2,"y":6},{"t":"wall","x":3,"y":5},{"t":"target","x":6,"y":8}],
+    tray: {"rightprism":3}, sol: [{"t":"rightprism","x":2,"y":7,"r":1},{"t":"rightprism","x":3,"y":7,"r":3},{"t":"rightprism","x":3,"y":8,"r":7}] },
+  { name: "Thread the Needle", w: 7, h: 9, items: [{"t":"laser","x":0,"y":5,"r":0},{"t":"wall","x":2,"y":5},{"t":"wall","x":3,"y":4},{"t":"wall","x":2,"y":4},{"t":"wall","x":4,"y":1},{"t":"jog","x":1,"y":3,"r":2},{"t":"target","x":6,"y":2}],
+    tray: {"rightprism":2,"block":1,"mirror":1}, sol: [{"t":"rightprism","x":1,"y":5,"r":5},{"t":"block","x":1,"y":4,"r":1},{"t":"rightprism","x":1,"y":2,"r":1}] },
+  { name: "Glass Hook", w: 7, h: 9, items: [{"t":"laser","x":3,"y":0,"r":2},{"t":"wall","x":4,"y":4},{"t":"wall","x":3,"y":6},{"t":"wall","x":1,"y":2},{"t":"wall","x":3,"y":2},{"t":"jog","x":1,"y":1,"r":4},{"t":"target","x":0,"y":8}],
+    tray: {"rightprism":2,"block":1}, sol: [{"t":"rightprism","x":3,"y":1,"r":5},{"t":"block","x":2,"y":1,"r":1},{"t":"rightprism","x":0,"y":1,"r":1}] },
+  { name: "Sidestep", w: 7, h: 9, items: [{"t":"laser","x":0,"y":1,"r":0},{"t":"wall","x":3,"y":5},{"t":"wall","x":2,"y":1},{"t":"wall","x":3,"y":3},{"t":"jog","x":1,"y":3,"r":2},{"t":"target","x":6,"y":7}],
+    tray: {"rightprism":3,"block":1}, sol: [{"t":"rightprism","x":1,"y":1,"r":3},{"t":"block","x":1,"y":2,"r":3},{"t":"rightprism","x":1,"y":7,"r":7}] },
+  { name: "Three Ways", w: 7, h: 9, items: [{"t":"laser","x":4,"y":8,"r":6},{"t":"wall","x":2,"y":3},{"t":"wall","x":5,"y":4},{"t":"wall","x":2,"y":1},{"t":"wall","x":1,"y":6},{"t":"jog","x":4,"y":4,"r":2},{"t":"target","x":0,"y":2},{"t":"target","x":0,"y":7},{"t":"target","x":3,"y":0}],
+    tray: {"splitter":2,"block":1,"rightprism":1}, sol: [{"t":"rightprism","x":4,"y":7,"r":3},{"t":"splitter","x":3,"y":7,"r":1},{"t":"splitter","x":3,"y":2,"r":1}] },
+  { name: "Refraction Run", w: 7, h: 9, items: [{"t":"laser","x":0,"y":0,"r":0},{"t":"wall","x":1,"y":5},{"t":"wall","x":3,"y":7},{"t":"wall","x":1,"y":6},{"t":"wall","x":2,"y":4},{"t":"jog","x":3,"y":0,"r":0},{"t":"target","x":0,"y":8},{"t":"target","x":0,"y":1}],
+    tray: {"block":1,"rightprism":2,"splitter":1,"mirror":1}, sol: [{"t":"block","x":1,"y":0,"r":1},{"t":"rightprism","x":4,"y":0,"r":3},{"t":"splitter","x":4,"y":1,"r":3},{"t":"rightprism","x":4,"y":8,"r":5}] },
+  { name: "Crossfire", w: 7, h: 9, items: [{"t":"laser","x":0,"y":2,"r":0},{"t":"laser","x":0,"y":3,"r":0},{"t":"wall","x":2,"y":7},{"t":"wall","x":4,"y":5},{"t":"wall","x":2,"y":3},{"t":"jog","x":6,"y":6,"r":2},{"t":"target","x":6,"y":8},{"t":"target","x":1,"y":0},{"t":"target","x":5,"y":0}],
+    tray: {"rightprism":2,"splitter":1,"block":1}, sol: [{"t":"block","x":1,"y":2,"r":3},{"t":"splitter","x":5,"y":2,"r":3},{"t":"rightprism","x":6,"y":2,"r":3},{"t":"rightprism","x":1,"y":3,"r":5}] },
+  { name: "Glasshouse", w: 7, h: 9, items: [{"t":"laser","x":0,"y":5,"r":0},{"t":"wall","x":2,"y":1},{"t":"wall","x":5,"y":3},{"t":"wall","x":3,"y":2},{"t":"wall","x":4,"y":5},{"t":"jog","x":1,"y":2,"r":6},{"t":"target","x":6,"y":0},{"t":"target","x":0,"y":1}],
+    tray: {"rightprism":2,"splitter":1,"block":1,"mirror":1}, sol: [{"t":"rightprism","x":1,"y":5,"r":5},{"t":"block","x":1,"y":4,"r":3},{"t":"splitter","x":1,"y":1,"r":1},{"t":"rightprism","x":1,"y":0,"r":1}] },
+]},
+{ id: 'curve', name: 'CURVE', sub: 'Curved mirrors and focal lengths', pieces: ['concavemirror', 'convexmirror', 'parabolic', 'elliptical'], levels: [
+  { name: "Bounce and Focus", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":2,"r":0},{"t":"target","x":4,"y":4,"s":"focus"}],
+    tray: {"concavemirror":1}, sol: [] },
+  { name: "Long Throw", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":6,"r":0},{"t":"target","x":5,"y":3,"s":"focus"}],
+    tray: {"parabolic":1}, sol: [] },
+  { name: "Choose the Curve", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":1,"r":0},{"t":"target","x":5,"y":4,"s":"focus"},{"t":"wall","x":6,"y":1}],
+    tray: {"concavemirror":1,"parabolic":1,"elliptical":1}, sol: [] },
+  { name: "Point to Point", w: 7, h: 9, items: [{"t":"bulb","x":1,"y":2,"r":0},{"t":"target","x":3,"y":4,"s":"focus"},{"t":"wall","x":4,"y":2}],
+    tray: {"elliptical":1,"concavemirror":1,"parabolic":1}, sol: [] },
+  { name: "Collimator", w: 7, h: 9, items: [{"t":"bulb","x":2,"y":1,"r":0},{"t":"target","x":4,"y":8},{"t":"wall","x":5,"y":1}],
+    tray: {"concavemirror":1,"elliptical":1,"parabolic":1}, sol: [] },
+  { name: "Pinhole Mirror", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":1,"r":0},{"t":"slit","x":4,"y":3,"r":2},{"t":"target","x":4,"y":8}],
+    tray: {"concavemirror":1,"convex":1}, sol: [] },
+  { name: "Measure Twice", w: 7, h: 9, items: [{"t":"bundle","x":6,"y":7,"r":4},{"t":"target","x":2,"y":1,"s":"focus"},{"t":"wall","x":1,"y":7}],
+    tray: {"concavemirror":1,"parabolic":1,"elliptical":1,"mirror":1}, sol: [] },
+  { name: "Telephoto", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":0,"r":0,"w":0.2},{"t":"target","x":3,"y":7,"s":"focus"},{"t":"wall","x":4,"y":0}],
+    tray: {"convexmirror":1,"concavemirror":1,"convex":1}, sol: [] },
+  { name: "Relay Mirrors", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":1,"r":0},{"t":"slit","x":4,"y":3,"r":2},{"t":"target","x":0,"y":5},{"t":"wall","x":0,"y":2},{"t":"wall","x":1,"y":2},{"t":"wall","x":2,"y":2},{"t":"wall","x":3,"y":2},{"t":"wall","x":5,"y":1}],
+    tray: {"concavemirror":2,"mirror":1}, sol: [] },
+  { name: "Searchlight", w: 7, h: 9, items: [{"t":"bulb","x":1,"y":0,"r":2},{"t":"target","x":4,"y":8},{"t":"target","x":6,"y":2},{"t":"wall","x":1,"y":3}],
+    tray: {"concavemirror":1,"splitter":1,"elliptical":1,"parabolic":1,"mirror":1}, sol: [] },
+  { name: "Two Foci", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":4,"r":0},{"t":"target","x":6,"y":7,"s":"focus"},{"t":"target","x":1,"y":6,"s":"focus"}],
+    tray: {"splitter":1,"parabolic":1,"concavemirror":1,"elliptical":1}, sol: [] },
+  { name: "Twin Telescope", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":0,"r":0},{"t":"slit","x":5,"y":3,"r":2},{"t":"target","x":0,"y":5},{"t":"target","x":3,"y":4,"s":"focus"},{"t":"wall","x":6,"y":0},{"t":"wall","x":2,"y":1},{"t":"wall","x":3,"y":1},{"t":"wall","x":4,"y":1}],
+    tray: {"splitter":1,"parabolic":1,"concavemirror":2,"elliptical":1,"mirror":1}, sol: [] },
+]},
 ];
 root.BEAMS_PACKS = PACKS;
 })(typeof window !== 'undefined' ? window : globalThis);
 
-window.BEAMS_META = {"1-1":{"name":"First Light","min":1,"sol":[{"t":"mirror","x":4,"y":1,"r":1}],"nsol":1,"verified":true,"allow":0},"1-2":{"name":"Dogleg","min":2,"sol":[{"t":"mirror","x":4,"y":0,"r":1},{"t":"mirror","x":4,"y":8,"r":1}],"nsol":2,"verified":true,"allow":1},"1-3":{"name":"Detour","min":3,"sol":[{"t":"mirror","x":1,"y":4,"r":1},{"t":"mirror","x":1,"y":7,"r":1},{"t":"mirror","x":6,"y":7,"r":3}],"nsol":4,"verified":true,"allow":0},"1-4":{"name":"Double Duty","min":1,"sol":[{"t":"mirror","x":3,"y":3,"r":1}],"nsol":2,"verified":true,"allow":0},"1-5":{"name":"Crosswalk","min":2,"sol":[{"t":"mirror","x":6,"y":4,"r":3},{"t":"mirror","x":3,"y":0,"r":1}],"nsol":1,"verified":true,"allow":1},"1-6":{"name":"Diagonal","min":2,"sol":[{"t":"mirror","x":1,"y":7,"r":2},{"t":"mirror","x":0,"y":6,"r":2}],"nsol":3,"verified":true,"allow":0},"1-7":{"name":"Fork","min":1,"sol":[{"t":"splitter","x":3,"y":4,"r":3}],"nsol":1,"verified":true,"allow":0},"1-8":{"name":"Trident","min":2,"sol":[{"t":"splitter","x":2,"y":2,"r":1},{"t":"splitter","x":4,"y":2,"r":1}],"nsol":1,"verified":true,"allow":0},"1-9":{"name":"Echo Chamber","min":4,"sol":[{"t":"mirror","x":5,"y":3,"r":3},{"t":"splitter","x":5,"y":5,"r":3},{"t":"splitter","x":5,"y":7,"r":3},{"t":"mirror","x":5,"y":8,"r":1}],"nsol":2,"verified":true,"allow":0},"1-10":{"name":"Hall of Mirrors","min":5,"sol":[{"t":"mirror","x":2,"y":4,"r":1},{"t":"splitter","x":2,"y":2,"r":1},{"t":"mirror","x":2,"y":3,"r":3},{"t":"mirror","x":3,"y":4,"r":1},{"t":"mirror","x":3,"y":5,"r":3}],"nsol":"?","verified":true,"allow":0},"1-11":{"name":"Crossroads","min":5,"sol":[{"t":"mirror","x":2,"y":5,"r":1},{"t":"splitter","x":2,"y":2,"r":3},{"t":"splitter","x":5,"y":8,"r":1},{"t":"mirror","x":5,"y":4,"r":3},{"t":"mirror","x":1,"y":2,"r":1}],"nsol":"?","verified":true,"allow":1},"1-12":{"name":"Switchboard","min":6,"sol":[{"t":"mirror","x":6,"y":3,"r":3},{"t":"splitter","x":2,"y":4,"r":1},{"t":"mirror","x":2,"y":6,"r":3},{"t":"splitter","x":6,"y":2,"r":3},{"t":"mirror","x":1,"y":4,"r":1},{"t":"mirror","x":5,"y":2,"r":1}],"nsol":"?","verified":true,"allow":0},"2-1":{"name":"Converge","min":1,"sol":[{"t":"convex","x":3,"y":4,"r":0}],"nsol":1,"verified":true,"allow":0},"2-2":{"name":"Fold","min":2,"sol":[{"t":"mirror","x":4,"y":2,"r":1},{"t":"convex","x":4,"y":5,"r":2}],"nsol":1,"verified":true,"allow":1},"2-3":{"name":"Pinhole","min":2,"sol":[{"t":"convex","x":1,"y":4,"r":0},{"t":"convex","x":4,"y":4,"r":0}],"nsol":2,"verified":true,"allow":0},"2-4":{"name":"Squeeze","min":2,"sol":[{"t":"convex","x":1,"y":4,"r":0},{"t":"concave","x":2,"y":4,"r":0}],"nsol":1,"verified":true,"allow":1},"2-5":{"name":"Lamplight","min":2,"sol":[{"t":"convex","x":1,"y":2,"r":2},{"t":"mirror","x":1,"y":6,"r":1}],"nsol":2,"verified":true,"allow":1},"2-6":{"name":"Two Lenses","min":2,"sol":[{"t":"convex","x":2,"y":2,"r":0},{"t":"planoconvex","x":2,"y":6,"r":0}],"nsol":1,"verified":true,"allow":1},"2-7":{"name":"Split Focus","min":3,"sol":[{"t":"splitter","x":3,"y":1,"r":1},{"t":"convex","x":4,"y":1,"r":0},{"t":"planoconvex","x":3,"y":4,"r":2}],"nsol":1,"verified":true,"allow":0},"2-8":{"name":"Image","min":2,"sol":[{"t":"convex","x":3,"y":1,"r":0},{"t":"mirror","x":5,"y":1,"r":1}],"nsol":1,"verified":true,"allow":1},"2-9":{"name":"Relay","min":3,"sol":[{"t":"mirror","x":6,"y":0,"r":1},{"t":"convex","x":6,"y":1,"r":2},{"t":"convex","x":6,"y":5,"r":2}],"verified":true,"allow":0},"2-10":{"name":"Choose Wisely","min":4,"sol":[{"t":"convex","x":1,"y":4,"r":0},{"t":"concave","x":2,"y":4,"r":0},{"t":"mirror","x":5,"y":4,"r":3},{"t":"planoconvex","x":5,"y":3,"r":2}],"nsol":2,"verified":true,"allow":2},"2-11":{"name":"Lighthouse","min":3,"sol":[{"t":"convex","x":3,"y":7,"r":2},{"t":"convex","x":3,"y":6,"r":2},{"t":"splitter","x":3,"y":3,"r":1}],"nsol":3,"verified":true,"allow":1},"2-12":{"name":"Observatory","min":7,"sol":[{"t":"convex","x":2,"y":0,"r":0},{"t":"splitter","x":5,"y":0,"r":1},{"t":"convex","x":5,"y":1,"r":2},{"t":"convex","x":5,"y":5,"r":2},{"t":"mirror","x":5,"y":8,"r":3},{"t":"mirror","x":6,"y":0,"r":1},{"t":"planoconvex","x":6,"y":2,"r":2}],"nsol":"?","verified":true,"allow":2}};
+window.BEAMS_META = {"1-1":{"name":"First Light","min":1,"sol":[{"t":"mirror","x":4,"y":1,"r":1}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"1-2":{"name":"Dogleg","min":2,"sol":[{"t":"mirror","x":4,"y":0,"r":1},{"t":"mirror","x":4,"y":8,"r":1}],"allow":1,"count":2,"complete":true,"searched":2,"verified":true},"1-3":{"name":"Detour","min":3,"sol":[{"t":"mirror","x":1,"y":4,"r":1},{"t":"mirror","x":1,"y":7,"r":1},{"t":"mirror","x":6,"y":7,"r":3}],"allow":0,"count":4,"complete":true,"searched":3,"verified":true},"1-4":{"name":"Double Duty","min":1,"sol":[{"t":"mirror","x":3,"y":3,"r":1}],"allow":0,"count":2,"complete":true,"searched":1,"verified":true},"1-5":{"name":"Crosswalk","min":2,"sol":[{"t":"mirror","x":6,"y":4,"r":3},{"t":"mirror","x":3,"y":0,"r":1}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"1-6":{"name":"Diagonal","min":2,"sol":[{"t":"mirror","x":1,"y":7,"r":2},{"t":"mirror","x":0,"y":6,"r":2}],"allow":0,"count":3,"complete":true,"searched":2,"verified":true},"1-7":{"name":"Fork","min":1,"sol":[{"t":"splitter","x":3,"y":4,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"1-8":{"name":"Trident","min":2,"sol":[{"t":"splitter","x":2,"y":2,"r":1},{"t":"splitter","x":4,"y":2,"r":1}],"allow":0,"count":1,"complete":true,"searched":2,"verified":true},"1-9":{"name":"Echo Chamber","min":4,"sol":[{"t":"mirror","x":5,"y":3,"r":3},{"t":"splitter","x":5,"y":5,"r":3},{"t":"splitter","x":5,"y":7,"r":3},{"t":"mirror","x":5,"y":8,"r":1}],"allow":0,"count":2,"complete":true,"searched":4,"verified":true},"1-10":{"name":"Hall of Mirrors","min":3,"sol":[{"t":"mirror","x":3,"y":5,"r":3},{"t":"splitter","x":2,"y":2,"r":1},{"t":"mirror","x":2,"y":3,"r":3}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"1-11":{"name":"Crossroads","min":3,"sol":[{"t":"mirror","x":5,"y":4,"r":3},{"t":"splitter","x":1,"y":4,"r":1},{"t":"mirror","x":2,"y":5,"r":1}],"allow":1,"count":2,"complete":true,"searched":3,"verified":true},"1-12":{"name":"Switchboard","min":3,"sol":[{"t":"mirror","x":6,"y":3,"r":3},{"t":"splitter","x":5,"y":3,"r":1},{"t":"mirror","x":1,"y":4,"r":1}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"2-1":{"name":"Converge","min":1,"sol":[{"t":"convex","x":3,"y":4,"r":0}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"2-2":{"name":"Fold","min":2,"sol":[{"t":"mirror","x":4,"y":2,"r":1},{"t":"convex","x":4,"y":5,"r":2}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"2-3":{"name":"Pinhole","min":2,"sol":[{"t":"convex","x":1,"y":4,"r":0},{"t":"convex","x":4,"y":4,"r":0}],"allow":0,"count":2,"complete":true,"searched":2,"verified":true},"2-4":{"name":"Squeeze","min":2,"sol":[{"t":"convex","x":1,"y":4,"r":0},{"t":"concave","x":2,"y":4,"r":0}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"2-5":{"name":"Lamplight","min":2,"sol":[{"t":"convex","x":1,"y":2,"r":2},{"t":"mirror","x":1,"y":6,"r":1}],"allow":1,"count":2,"complete":true,"searched":2,"verified":true},"2-6":{"name":"Two Lenses","min":2,"sol":[{"t":"convex","x":2,"y":2,"r":0},{"t":"planoconvex","x":2,"y":6,"r":0}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"2-7":{"name":"Split Focus","min":3,"sol":[{"t":"splitter","x":3,"y":1,"r":1},{"t":"convex","x":4,"y":1,"r":0},{"t":"planoconvex","x":3,"y":4,"r":2}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"2-8":{"name":"Image","min":2,"sol":[{"t":"convex","x":3,"y":1,"r":0},{"t":"mirror","x":5,"y":1,"r":1}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"2-9":{"name":"Relay","min":3,"sol":[{"t":"mirror","x":6,"y":0,"r":1},{"t":"convex","x":6,"y":1,"r":2},{"t":"convex","x":6,"y":5,"r":2}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"2-10":{"name":"Choose Wisely","min":4,"sol":[{"t":"convex","x":1,"y":4,"r":0},{"t":"concave","x":2,"y":4,"r":0},{"t":"mirror","x":5,"y":4,"r":3},{"t":"planoconvex","x":5,"y":3,"r":2}],"allow":2,"count":2,"complete":true,"searched":4,"verified":true},"2-11":{"name":"Lighthouse","min":3,"sol":[{"t":"convex","x":3,"y":7,"r":2},{"t":"convex","x":3,"y":6,"r":2},{"t":"splitter","x":3,"y":3,"r":1}],"allow":1,"count":3,"complete":true,"searched":3,"verified":true},"2-12":{"name":"Observatory","min":7,"sol":[{"t":"convex","x":2,"y":0,"r":0},{"t":"splitter","x":5,"y":0,"r":1},{"t":"convex","x":5,"y":1,"r":2},{"t":"convex","x":5,"y":5,"r":2},{"t":"mirror","x":5,"y":8,"r":3},{"t":"mirror","x":6,"y":0,"r":1},{"t":"planoconvex","x":6,"y":2,"r":2}],"allow":2,"count":0,"complete":false,"searched":3,"verified":true},"3-1":{"name":"Glass Corner","min":1,"sol":[{"t":"rightprism","x":4,"y":1,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"3-2":{"name":"One Way","min":2,"sol":[{"t":"rightprism","x":3,"y":4,"r":3},{"t":"rightprism","x":3,"y":2,"r":7}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"3-3":{"name":"Nudge","min":1,"sol":[{"t":"block","x":1,"y":4,"r":1}],"allow":0,"count":3,"complete":true,"searched":1,"verified":true},"3-4":{"name":"Lean the Other Way","min":1,"sol":[{"t":"block","x":4,"y":2,"r":1}],"allow":0,"count":3,"complete":true,"searched":1,"verified":true},"3-5":{"name":"Staircase","min":3,"sol":[{"t":"rightprism","x":2,"y":7,"r":1},{"t":"rightprism","x":3,"y":7,"r":3},{"t":"rightprism","x":3,"y":8,"r":7}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"3-6":{"name":"Thread the Needle","min":3,"sol":[{"t":"mirror","x":1,"y":5,"r":3},{"t":"block","x":1,"y":4,"r":1},{"t":"rightprism","x":1,"y":2,"r":1}],"allow":0,"count":12,"complete":true,"searched":3,"verified":true},"3-7":{"name":"Glass Hook","min":3,"sol":[{"t":"rightprism","x":3,"y":1,"r":5},{"t":"block","x":2,"y":1,"r":1},{"t":"rightprism","x":0,"y":1,"r":1}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"3-8":{"name":"Sidestep","min":3,"sol":[{"t":"rightprism","x":1,"y":1,"r":3},{"t":"block","x":1,"y":2,"r":3},{"t":"rightprism","x":1,"y":7,"r":7}],"allow":0,"count":3,"complete":true,"searched":3,"verified":true},"3-9":{"name":"Three Ways","min":3,"sol":[{"t":"rightprism","x":4,"y":7,"r":3},{"t":"splitter","x":3,"y":7,"r":1},{"t":"splitter","x":3,"y":2,"r":1}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"3-10":{"name":"Refraction Run","min":4,"sol":[{"t":"rightprism","x":1,"y":0,"r":7},{"t":"block","x":2,"y":0,"r":3},{"t":"splitter","x":1,"y":3,"r":0},{"t":"rightprism","x":0,"y":5,"r":7}],"allow":0,"count":53,"complete":true,"searched":4,"verified":true},"3-11":{"name":"Crossfire","min":4,"sol":[{"t":"block","x":1,"y":2,"r":3},{"t":"splitter","x":5,"y":2,"r":3},{"t":"rightprism","x":6,"y":2,"r":3},{"t":"rightprism","x":1,"y":3,"r":5}],"allow":0,"count":7,"complete":true,"searched":4,"verified":true},"3-12":{"name":"Glasshouse","min":4,"sol":[{"t":"mirror","x":1,"y":5,"r":3},{"t":"block","x":1,"y":4,"r":3},{"t":"splitter","x":1,"y":1,"r":1},{"t":"rightprism","x":1,"y":0,"r":1}],"allow":0,"count":13,"complete":true,"searched":4,"verified":true},"4-1":{"name":"Bounce and Focus","min":1,"sol":[{"t":"concavemirror","x":4,"y":2,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"4-2":{"name":"Long Throw","min":1,"sol":[{"t":"parabolic","x":5,"y":6,"r":5}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"4-3":{"name":"Choose the Curve","min":1,"sol":[{"t":"parabolic","x":5,"y":1,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"4-4":{"name":"Point to Point","min":1,"sol":[{"t":"elliptical","x":3,"y":2,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"4-5":{"name":"Collimator","min":1,"sol":[{"t":"concavemirror","x":4,"y":1,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"4-6":{"name":"Pinhole Mirror","min":2,"sol":[{"t":"concavemirror","x":4,"y":1,"r":3},{"t":"convex","x":4,"y":5,"r":2}],"allow":1,"count":2,"complete":true,"searched":2,"verified":true},"4-7":{"name":"Measure Twice","min":2,"sol":[{"t":"mirror","x":2,"y":7,"r":1},{"t":"elliptical","x":2,"y":0,"r":2}],"allow":0,"count":4,"complete":true,"searched":2,"verified":true},"4-8":{"name":"Telephoto","min":2,"sol":[{"t":"convexmirror","x":3,"y":0,"r":3},{"t":"convex","x":3,"y":1,"r":2}],"allow":0,"count":1,"complete":true,"searched":2,"verified":true},"4-9":{"name":"Relay Mirrors","min":2,"sol":[{"t":"concavemirror","x":4,"y":1,"r":3},{"t":"concavemirror","x":4,"y":5,"r":5}],"allow":0,"count":1,"complete":true,"searched":2,"verified":true},"4-10":{"name":"Searchlight","min":2,"sol":[{"t":"concavemirror","x":1,"y":2,"r":7},{"t":"splitter","x":4,"y":2,"r":1}],"allow":0,"count":1,"complete":true,"searched":2,"verified":true},"4-11":{"name":"Two Foci","min":3,"sol":[{"t":"splitter","x":1,"y":4,"r":1},{"t":"parabolic","x":6,"y":4,"r":3},{"t":"elliptical","x":1,"y":7,"r":6}],"allow":0,"count":4,"complete":true,"searched":3,"verified":true},"4-12":{"name":"Twin Telescope","min":4,"sol":[{"t":"splitter","x":1,"y":0,"r":1},{"t":"parabolic","x":5,"y":0,"r":3},{"t":"concavemirror","x":5,"y":5,"r":5},{"t":"concavemirror","x":1,"y":4,"r":7}],"allow":0,"count":2,"complete":false,"searched":3,"verified":true}};
 </script>
 <script>
 (function () {
@@ -723,8 +814,6 @@ const DPR = Math.min(window.devicePixelRatio || 1, 3);
 
 /* ---------- future packs (shown, not yet playable) ---------- */
 const FUTURE = [
-  { name: 'REFRACT', sub: 'Glass blocks, prisms and total internal reflection' },
-  { name: 'CURVE', sub: 'Concave, convex, parabolic and elliptical mirrors' },
   { name: 'SPECTRUM', sub: 'Coloured light, white light and dispersion' },
   { name: 'GUIDE', sub: 'Fibres, light pipes and the critical angle' },
   { name: 'INSTRUMENT', sub: 'Telescopes, periscopes and compound optics' },
@@ -828,7 +917,7 @@ function drawPiece(ctx, it, t, opts) {
     }
     case 'concavemirror': case 'convexmirror': case 'parabolic': case 'elliptical': {
       const deep = { concavemirror: 0.1, convexmirror: -0.1, parabolic: 0.15, elliptical: 0.26 }[it.t];
-      const hh = (it.t === 'parabolic' || it.t === 'elliptical') ? 0.46 : H;
+      const hh = 0.48;
       ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(deep + 0.04, -hh); ctx.quadraticCurveTo(-deep + 0.04, 0, deep + 0.04, hh); ctx.strokeStyle = '#2a2d33'; ctx.lineWidth = 0.1; ctx.stroke();
       ctx.beginPath(); ctx.moveTo(deep, -hh); ctx.quadraticCurveTo(-deep, 0, deep, hh); ctx.strokeStyle = '#cfd3da'; ctx.lineWidth = 0.06; ctx.stroke();
@@ -845,6 +934,13 @@ function drawPiece(ctx, it, t, opts) {
       ctx.fillStyle = '#121316'; ctx.fillRect(-0.5, -0.5, 1, 1);
       ctx.strokeStyle = 'rgba(64,224,255,.35)'; ctx.lineWidth = 0.025; ctx.strokeRect(-0.44, -0.44, 0.88, 0.88);
       ctx.strokeStyle = 'rgba(64,224,255,.12)'; ctx.beginPath(); ctx.moveTo(-0.44, -0.44); ctx.lineTo(0.44, 0.44); ctx.moveTo(0.44, -0.44); ctx.lineTo(-0.44, 0.44); ctx.stroke();
+      break;
+    }
+    case 'jog': { // offset pinhole: gap sits 1/5 cell off centre
+      ctx.fillStyle = '#121316'; ctx.strokeStyle = 'rgba(64,224,255,.45)'; ctx.lineWidth = 0.02;
+      ctx.fillRect(-0.06, -0.5, 0.12, 0.63); ctx.strokeRect(-0.06, -0.5, 0.12, 0.63);
+      ctx.fillRect(-0.06, 0.27, 0.12, 0.23); ctx.strokeRect(-0.06, 0.27, 0.12, 0.23);
+      ctx.strokeStyle = 'rgba(64,224,255,.25)'; ctx.setLineDash([0.03, 0.03]); ctx.beginPath(); ctx.moveTo(-0.3, 0); ctx.lineTo(0.3, 0); ctx.stroke(); ctx.setLineDash([]);
       break;
     }
     case 'slit': case 'slot': {
@@ -921,12 +1017,12 @@ function drawBoard(ctx, L, items, res, o) {
   // armed: show empty cells you can place on
   if (o.armedCells) { ctx.fillStyle = 'rgba(64,224,255,.05)'; for (const k of o.armedCells) { const [x, y] = k.split(',').map(Number); ctx.fillRect(x + 0.3, y + 0.3, 0.4, 0.4); } }
   // static pieces (under beams) — walls, slits, sources
-  items.forEach((it, i) => { if (it.t === 'wall' || it.t === 'slit' || it.t === 'slot') drawPiece(ctx, it, t); });
+  items.forEach((it, i) => { if (it.t === 'wall' || it.t === 'slit' || it.t === 'slot' || it.t === 'jog') drawPiece(ctx, it, t); });
   // beams
   if (res) drawBeams(ctx, res, c, t, o.flash);
   // pieces above beams
   items.forEach((it, i) => {
-    if (it.t === 'wall' || it.t === 'slit' || it.t === 'slot') return;
+    if (it.t === 'wall' || it.t === 'slit' || it.t === 'slot' || it.t === 'jog') return;
     drawPiece(ctx, it, t, { lit: res && it.t === 'target' && res.lit[i] === B.MASK[it.c || 'Y'], rejected: res && res.rejected && res.rejected[i] });
     if (it.fixed && !B.SOURCE_TYPES[it.t] && it.t !== 'target' && o.mine) { // locked tick
       ctx.fillStyle = 'rgba(139,143,152,.6)'; const s = 0.07;
@@ -1405,7 +1501,7 @@ function succeed() {
   $('#card').innerHTML = '<h2>' + (game.daily ? 'Daily solved' : 'Solved') + '</h2><div class="sub">' + $('#g-title').textContent + '</div>' +
     '<div class="stars">' + [1, 2, 3].map(k => '<span class="' + (stars >= k ? 'on' : '') + '">★</span>').join('') + '</div><ul>' +
     '<li class="ok">Every ray landed</li>' +
-    '<li class="' + (sc.extraPieces ? '' : 'ok') + '">' + used + ' piece' + (used === 1 ? '' : 's') + ' used' + (m.min != null ? ' · fewest possible ' + m.min : '') + '</li>' +
+    '<li class="' + (sc.extraPieces ? '' : 'ok') + '">' + used + ' piece' + (used === 1 ? '' : 's') + ' used' + (m.min != null ? (m.searched != null && m.searched < m.min - 1 ? ' · best known ' : ' · fewest possible ') + m.min : '') + '</li>' +
     '<li class="' + (sc.over ? '' : 'ok') + '">' + game.alarms + ' alarm' + (game.alarms === 1 ? '' : 's') + ' · ' + (allow ? allow + ' expected' : 'none expected') + (sc.over ? ' · −' + sc.over + '★' : '') + '</li></ul>' +
     '<div class="row"><button id="c-again">Replay</button>' + (next ? '<button class="go" id="c-next">Next</button>' : '<button class="go" id="c-done">Done</button>') + '</div>';
   $('#sheet').classList.add('on');
@@ -1464,13 +1560,13 @@ const LAB = [
   { sec: 'Lenses', id: 'fresnel', pack: 7, items: [{ t: 'fresnel', x: 2, y: 2, r: 0, play: 1 }], src: 'bundle' },
   { sec: 'Lenses', id: 'microlens', pack: 7, items: [{ t: 'microlens', x: 2, y: 2, r: 0, play: 1 }], src: 'bundle' },
   { sec: 'Lenses', id: 'bulblens', name: 'Bulb and lens', pack: 2, desc: 'A point of light placed at a lens’s focal point leaves as a parallel beam. Move it further away and the lens forms an image instead.', items: [{ t: 'convex', x: 2, y: 2, r: 0, play: 1 }], src: 'bulb', sx: 0 },
-  { sec: 'Curved mirrors', id: 'concavemirror', pack: 4, items: [{ t: 'concavemirror', x: 5, y: 2, r: 4, play: 1 }], src: 'bundle' },
-  { sec: 'Curved mirrors', id: 'convexmirror', pack: 4, items: [{ t: 'convexmirror', x: 5, y: 2, r: 4, play: 1 }], src: 'bundle' },
-  { sec: 'Curved mirrors', id: 'parabolic', pack: 4, items: [{ t: 'parabolic', x: 5, y: 2, r: 4, play: 1 }], src: 'bundle' },
-  { sec: 'Curved mirrors', id: 'elliptical', pack: 4, items: [{ t: 'elliptical', x: 5, y: 2, r: 4, play: 1 }], src: 'bulb', bulbAt: { x: 3, y: 1, ang: Math.atan2(1, 2), spread: 9 } },
+  { sec: 'Curved mirrors', id: 'concavemirror', pack: 4, items: [{ t: 'concavemirror', x: 3, y: 2, r: 3, play: 1 }, { t: 'target', x: 3, y: 4, s: 'focus', fixed: true }], src: 'bundle' },
+  { sec: 'Curved mirrors', id: 'convexmirror', pack: 4, items: [{ t: 'convexmirror', x: 3, y: 2, r: 3, play: 1 }], src: 'bundle' },
+  { sec: 'Curved mirrors', id: 'parabolic', pack: 4, items: [{ t: 'parabolic', x: 3, y: 2, r: 3, play: 1 }, { t: 'target', x: 3, y: 5, s: 'focus', fixed: true }], src: 'bundle' },
+  { sec: 'Curved mirrors', id: 'elliptical', pack: 4, items: [{ t: 'elliptical', x: 3, y: 2, r: 3, play: 1 }, { t: 'target', x: 3, y: 4, s: 'focus', fixed: true }], src: 'bulb', sx: 1 },
   { sec: 'Glass and prisms', id: 'plate', pack: 3, items: [{ t: 'plate', x: 3, y: 2, r: 1, play: 1 }], src: 'laser' },
-  { sec: 'Glass and prisms', id: 'block', pack: 3, items: [{ t: 'block', x: 3, y: 2, r: 1, play: 1 }], src: 'laser' },
-  { sec: 'Glass and prisms', id: 'rightprism', pack: 3, items: [{ t: 'rightprism', x: 4, y: 2, r: 0, play: 1 }], src: 'bundle' },
+  { sec: 'Glass and prisms', id: 'block', pack: 3, items: [{ t: 'block', x: 2, y: 2, r: 1, play: 1 }, { t: 'jog', x: 4, y: 2, r: 0, fixed: true }], src: 'laser' },
+  { sec: 'Glass and prisms', id: 'rightprism', pack: 3, items: [{ t: 'rightprism', x: 3, y: 2, r: 3, play: 1 }], src: 'laser' },
   { sec: 'Glass and prisms', id: 'prism', pack: 5, items: [{ t: 'prism', x: 3, y: 2, r: 1, play: 1 }], src: 'white' },
   { sec: 'Glass and prisms', id: 'newton', name: 'Newton’s Prisms', pack: 5, desc: 'One prism spreads white light into colours; a second, turned the other way, pulls them back together.', items: [{ t: 'prism', x: 2, y: 2, r: 1, play: 1 }, { t: 'prism', x: 4, y: 3, r: 5, play: 1 }], src: 'white', sy: 2, h: 6 },
   { sec: 'Instruments', id: 'kepler', name: 'Keplerian Telescope', pack: 7, desc: 'Two converging lenses spaced by the sum of their focal lengths: parallel in, parallel out, flipped upside down.', items: [{ t: 'convex', x: 1, y: 2, r: 0, play: 1 }, { t: 'convex', x: 5, y: 2, r: 0, play: 1 }], src: 'bundle', w: 8 },
@@ -1527,7 +1623,7 @@ function benchTrace() {
 }
 bcv.addEventListener('pointerdown', e => {
   const r = bcv.getBoundingClientRect(), x = Math.floor((e.clientX - r.left) / bench.cell), y = Math.floor((e.clientY - r.top) / bench.cell);
-  const i = bench.pieces.findIndex(p => p.x === x && p.y === y);
+  const i = bench.pieces.findIndex(p => p.x === x && p.y === y && !p.fixed);
   if (i < 0) { bench.sel = null; return; }
   const p = bench.pieces[i];
   if (B.P[p.t].rot > 1) { p.r = (p.r + 1) % 8; sfx.rot(); }
