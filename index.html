@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="app-repo" content="BEAMS">
-<meta name="app-version" content="0.1.4">
+<meta name="app-version" content="0.1.5">
 <meta name="theme-color" content="#16171a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -252,9 +252,9 @@ def('mirror', { name: 'Plane Mirror', rot: 4, cat: 'mirror',
 def('splitter', { name: 'Beam Splitter', rot: 4, cat: 'mirror',
   desc: 'Half-silvered diagonal. Every ray continues straight and also reflects.',
   geo: () => [{ k: 'seg', a: v(-H * 0.95, 0), b: v(H * 0.95, 0), act: 'split' }] });
-def('corner', { name: 'Corner Reflector', rot: 8, cat: 'mirror',
-  desc: 'Two mirrors at 90°. Sends light straight back the way it came, mirrored across the centre.',
-  geo: () => [{ k: 'seg', a: v(0.3, 0), b: v(-0.12, -H), act: 'mirror' }, { k: 'seg', a: v(0.3, 0), b: v(-0.12, H), act: 'mirror' }] });
+def('corner', { name: 'Corner Reflector', rot: 8, cat: 'mirror', rule: ruleCorner,
+  desc: 'Two mirrors at 90°. Light entering the open side goes straight back the way it came.',
+  geo: () => [{ k: 'rule' }] });
 def('wedge', { name: 'Mirror Wedge', rot: 8, cat: 'mirror',
   desc: 'Two mirrors at a sharp angle. Rays ping-pong toward the tip and turn back out.',
   geo: () => [{ k: 'seg', a: v(0.44, 0), b: v(-0.44, -0.24), act: 'mirror' }, { k: 'seg', a: v(0.44, 0), b: v(-0.44, 0.24), act: 'mirror' }] });
@@ -269,8 +269,8 @@ thinLens('planoconvex', 'Plano-Convex Lens', 3, 'A gentler converging lens: focu
 thinLens('planoconcave', 'Plano-Concave Lens', -2, 'A gentler diverging lens: virtual focus 2 cells back.');
 thinLens('posmeniscus', 'Positive Meniscus', 4, 'Weak converging lens: focus 4 cells away.');
 thinLens('negmeniscus', 'Negative Meniscus', -3, 'Weak diverging lens: virtual focus 3 cells back.');
-thinLens('aspheric', 'Aspheric Lens', 1.5, 'Strong, aberration-free converging lens: focus 1½ cells away.');
-thinLens('fresnel', 'Fresnel Lens', 2.5, 'A flattened convex lens cut into rings: focus 2½ cells away.');
+thinLens('aspheric', 'Aspheric Lens', 1, 'The strongest converging lens: focus just 1 cell away.');
+thinLens('fresnel', 'Fresnel Lens', 5, 'A flat lens cut into rings: a weak, long focus 5 cells away.');
 def('ball', { name: 'Ball Lens', rot: 1, cat: 'lens', f: 1,
   desc: 'A glass sphere. Focuses light 1 cell past its centre from any direction — no rotation needed.',
   geo: () => [{ k: 'ball', c: v(0, 0), h: 0.36, f: 1 }] });
@@ -312,6 +312,53 @@ def('target', { name: 'Receiver', rot: 1, cat: 'target', geo: (it) => [{ k: 'cir
 
 const SOURCE_TYPES = { laser: 1, bundle: 1, bulb: 1 };
 
+/* ---------- grid-rule pieces ----------
+   Work on single centred beams (lasers). Directions are 0..7 in 45° steps clockwise from east.
+   A rule takes {d, mask, r} and returns outputs [{dir, mask, at?}]; an empty list absorbs/scatters the light. */
+const COL = { R: 1, G: 2, B: 4 };
+const bits = m => [1, 2, 4, 8].filter(b => m & b);
+const m8 = x => ((x % 8) + 8) % 8;
+function ruleCorner({ d, r }) { return (d === r || d === m8(r + 1) || d === m8(r - 1)) ? [{ dir: m8(d + 4) }] : []; }
+function ruleSpectrum({ d, mask, r }) { // red/gold straight on, green bends 45°, blue bends 90°: blue bends most
+  const s = r === 0 ? 1 : -1, out = [];
+  for (const b of bits(mask)) out.push({ dir: m8(d + (b === 2 ? s : b === 4 ? 2 * s : 0)), mask: b });
+  return out;
+}
+const ruleFilter = C => ({ d, mask }) => (mask & C) ? [{ dir: d, mask: mask & C }] : [];
+const ruleDichroic = C => ({ d, mask, r }) => { // reflects one colour like a mirror, lets the rest through
+  if (m8(d - r) % 4 === 0) return [];
+  const out = [];
+  if (mask & C) out.push({ dir: m8(2 * r - d), mask: mask & C });
+  if (mask & ~C) out.push({ dir: d, mask: mask & ~C });
+  return out;
+};
+const ruleHalfDisc = tir => ({ d, r }) => { // r = the way the curved side faces; the flat face is opposite
+  if (d === m8(r + 4) || d === r) return [{ dir: d }];      // square on: straight through
+  if (d === m8(r + 3)) return tir ? [{ dir: m8(r + 1) }] : []; // 45° onto the flat face from inside:
+  if (d === m8(r + 5)) return tir ? [{ dir: m8(r - 1) }] : []; //  crown glass reflects totally, water lets it escape
+  return [];
+};
+function ruleFibre({ d, r, it, items, idx }) {
+  if (d !== m8(r + 4)) return [];
+  const j = items.findIndex((o, k) => k !== idx && o.t === 'fibre' && o.p === it.p);
+  return j < 0 ? [] : [{ dir: items[j].r || 0, at: j }];
+}
+const R8 = Math.SQRT1_2, DIR8 = [v(1, 0), v(R8, R8), v(0, 1), v(-R8, R8), v(-1, 0), v(-R8, -R8), v(0, -1), v(R8, -R8)];
+def('spectrum', { name: 'Dispersion Prism', rot: 2, cat: 'colour', rule: ruleSpectrum,
+  desc: 'Splits white light. Red goes straight on, green bends 45° and blue bends 90°: blue always bends most.', geo: () => [{ k: 'rule' }] });
+for (const [c, nm] of [['R', 'Red'], ['G', 'Green'], ['B', 'Blue']]) {
+  def('filter' + c, { name: nm + ' Filter', rot: 1, cat: 'colour', col: c, rule: ruleFilter(COL[c]),
+    desc: 'Coloured glass: only ' + nm.toLowerCase() + ' light gets through.', geo: () => [{ k: 'rule' }] });
+  def('dichro' + c, { name: nm + ' Dichroic Mirror', rot: 4, cat: 'colour', col: c, rule: ruleDichroic(COL[c]),
+    desc: 'A coated mirror that reflects only ' + nm.toLowerCase() + ' light and lets every other colour straight through.', geo: () => [{ k: 'rule' }] });
+}
+def('critical', { name: 'Critical Angle Block', rot: 8, cat: 'guide', rule: ruleHalfDisc(true),
+  desc: 'Crown glass half-disc. Square on, light goes straight through; at 45° onto the flat face from inside it is totally reflected, because 45° is past glass’s 41° critical angle.', geo: () => [{ k: 'rule' }] });
+def('water', { name: 'Water Cell', rot: 8, cat: 'guide', rule: ruleHalfDisc(false),
+  desc: 'Same shape, filled with water. Water’s critical angle is 49°, so light at 45° escapes instead of reflecting.', geo: () => [{ k: 'rule' }] });
+def('fibre', { name: 'Optical Fibre', rot: 8, cat: 'fixed', rule: ruleFibre,
+  desc: 'Light sent straight into one end comes out of the matching end, however the fibre is routed.', geo: () => [{ k: 'rule' }] });
+
 function emit(it) {
   const ang = it.ang != null ? it.ang : (it.r || 0) * Math.PI / 4, d = v(Math.cos(ang), Math.sin(ang)), p = perp(d);
   const c = v(it.x + 0.5, it.y + 0.5), mask = MASK[it.c || 'Y'];
@@ -344,6 +391,7 @@ function colliders(it, idx) {
       const a = rotv(g.a, ang);
       out.push(Object.assign(base, { k: 'thin', c: W(g.c), a, p: perp(a), h: g.h, f: g.f, kind: g.kind }));
     } else if (g.k === 'ball') out.push(Object.assign(base, { k: 'ball', c: W(g.c), h: g.h, f: g.f }));
+    else if (g.k === 'rule') out.push(Object.assign(base, { k: 'rule', c, def }));
     else if (g.k === 'body') {
       const pts = g.pts.map(W), body = { id: idx, disp: !!g.disp };
       let cx = 0, cy = 0; pts.forEach(p => { cx += p.x; cy += p.y; }); const cen = v(cx / pts.length, cy / pts.length);
@@ -423,7 +471,8 @@ function trace(level, items, base) {
           }
           t = dot(sub(c.c, o), c.a) / da; if (!(t > EPS)) t = null;
           else { const q = add(o, mul(d, t)); if (Math.abs(dot(sub(q, c.c), c.p)) > c.h) t = null; }
-        } else if (c.k === 'ball') {
+        } else if (c.k === 'rule') t = hitCirc(o, d, c.c, 0.3);
+        else if (c.k === 'ball') {
           t = dot(sub(c.c, o), d); if (!(t > EPS)) t = null;
           else { const q = add(o, mul(d, t)); if (Math.hypot(q.x - c.c.x, q.y - c.c.y) > c.h) t = null; }
         }
@@ -462,6 +511,18 @@ function trace(level, items, base) {
           else { rejected[c.item] = 1; end = { type: 'wrong', item: c.item }; }
         } else end = { type: 'block' };
         break;
+      } else if (c.k === 'rule') {
+        const off = Math.abs((c.c.x - o.x) * d.y - (c.c.y - o.y) * d.x), ang = Math.atan2(d.y, d.x) / (Math.PI / 4), di = Math.round(ang);
+        if (off > 0.12 || Math.abs(ang - di) > 0.03) { end = { type: 'block' }; break; } // only a centred beam on a grid line couples in
+        pts[pts.length - 1] = c.c;
+        const it = items[c.item], outs = c.def.rule({ d: m8(di), mask, r: it.r || 0, it, items, idx: c.item });
+        if (!outs.length) { end = { type: 'block' }; break; }
+        for (const ou of outs) {
+          if (spawned >= maxRays) { overflow = true; break; }
+          const from = ou.at != null ? cols.find(k => k.k === 'rule' && k.item === ou.at) : c;
+          queue.push({ o: from.c, d: DIR8[ou.dir], mask: ou.mask || mask, inBody: null, skip: from, src: ray.src, via: ou.at != null ? c.c : null }); spawned++;
+        }
+        end = { type: 'split' }; break;
       } else if (c.k === 'thin' && edgeOn) { end = { type: 'block' }; break;
       } else if (c.k === 'thin') {
         const y = dot(sub(q, c.c), c.p);
@@ -592,7 +653,7 @@ function alarmAllowance(L, sol) {
   for (let m = 0; m < full; m++) { if (best[m] === Infinity) continue; for (let i = 0; i < k; i++) { if (m & (1 << i)) continue; const n = m | (1 << i); const c = best[m] + (n === full ? 0 : cost[n]); if (c < best[n]) best[n] = c; } }
   return best[full];
 }
-root.BEAMS = { alarmAllowance, P, MASK, MASK_NAME, nFor, trace, baseItems, occupied, minRot, solve, emit, colliders, rayCells, SOURCE_TYPES };
+root.BEAMS = { alarmAllowance, DIR8, COL, P, MASK, MASK_NAME, nFor, trace, baseItems, occupied, minRot, solve, emit, colliders, rayCells, SOURCE_TYPES };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* BEAMS procedural puzzle generator (used for the Daily puzzle and to draft pack levels). */
@@ -798,11 +859,115 @@ const PACKS = [
   { name: "Twin Telescope", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":0,"r":0},{"t":"slit","x":5,"y":3,"r":2},{"t":"target","x":0,"y":5},{"t":"target","x":3,"y":4,"s":"focus"},{"t":"wall","x":6,"y":0},{"t":"wall","x":2,"y":1},{"t":"wall","x":3,"y":1},{"t":"wall","x":4,"y":1}],
     tray: {"splitter":1,"parabolic":1,"concavemirror":2,"elliptical":1,"mirror":1}, sol: [] },
 ]},
+{ id: 'spectrum', name: 'SPECTRUM', sub: 'White light, colours and dispersion', pieces: ["spectrum","filterR","dichroG"], levels: [
+  { name: "Split White", w: 7, h: 9, items: [{"t":"laser","x":0,"y":4,"r":0,"c":"W"},{"t":"target","x":6,"y":4,"c":"R"},{"t":"target","x":6,"y":8,"c":"G"},{"t":"target","x":2,"y":8,"c":"B"}],
+    tray: {"spectrum":1}, sol: [] },
+  { name: "Coloured Glass", w: 7, h: 9, items: [{"t":"laser","x":0,"y":2,"r":0,"c":"W"},{"t":"target","x":6,"y":2,"c":"R"},{"t":"laser","x":0,"y":6,"r":0,"c":"W"},{"t":"target","x":4,"y":0,"c":"B"},{"t":"wall","x":5,"y":6}],
+    tray: {"filterR":1,"filterB":1,"filterG":1,"mirror":1}, sol: [] },
+  { name: "Pick a Colour", w: 7, h: 9, items: [{"t":"laser","x":0,"y":4,"r":0,"c":"W"},{"t":"target","x":3,"y":0,"c":"G"},{"t":"target","x":5,"y":8,"c":"R"},{"t":"target","x":6,"y":4,"c":"B"}],
+    tray: {"dichroG":1,"dichroR":1}, sol: [] },
+  { name: "Make White", w: 7, h: 9, items: [{"t":"laser","x":0,"y":4,"r":0,"c":"R"},{"t":"laser","x":4,"y":0,"r":2,"c":"G"},{"t":"laser","x":5,"y":8,"r":6,"c":"B"},{"t":"target","x":6,"y":4,"c":"W"}],
+    tray: {"dichroG":1,"dichroB":1,"dichroR":1}, sol: [] },
+  { name: "Blue Bends Most", w: 7, h: 9, items: [{"t":"laser","x":0,"y":1,"r":0,"c":"W"},{"t":"target","x":6,"y":1,"c":"R"},{"t":"target","x":6,"y":6,"c":"G"},{"t":"target","x":6,"y":7,"c":"B"}],
+    tray: {"spectrum":1,"mirror":1}, sol: [] },
+  { name: "Red and Blue", w: 7, h: 9, items: [{"t":"laser","x":0,"y":6,"r":0,"c":"W"},{"t":"wall","x":4,"y":7},{"t":"wall","x":2,"y":3},{"t":"wall","x":5,"y":6},{"t":"wall","x":1,"y":2},{"t":"target","x":6,"y":3,"c":"G"},{"t":"target","x":4,"y":0,"c":"R"},{"t":"target","x":6,"y":5,"c":"B"}],
+    tray: {"dichroR":1,"spectrum":1,"dichroB":1}, sol: [{"t":"spectrum","x":3,"y":6,"r":1},{"t":"dichroR","x":4,"y":6,"r":3},{"t":"dichroB","x":3,"y":5,"r":3}] },
+  { name: "Filtered", w: 7, h: 9, items: [{"t":"laser","x":4,"y":8,"r":6,"c":"W"},{"t":"wall","x":1,"y":6},{"t":"wall","x":3,"y":4},{"t":"wall","x":5,"y":1},{"t":"wall","x":3,"y":5},{"t":"target","x":6,"y":5,"c":"R"},{"t":"target","x":6,"y":3,"c":"B"}],
+    tray: {"filterB":1,"spectrum":1,"dichroR":1}, sol: [{"t":"dichroR","x":4,"y":5,"r":3},{"t":"filterB","x":4,"y":4,"r":0},{"t":"spectrum","x":4,"y":3,"r":0}] },
+  { name: "Three Prisms", w: 7, h: 9, items: [{"t":"laser","x":6,"y":0,"r":2,"c":"W"},{"t":"wall","x":5,"y":6},{"t":"wall","x":2,"y":4},{"t":"wall","x":3,"y":3},{"t":"wall","x":5,"y":2},{"t":"target","x":6,"y":8,"c":"R"},{"t":"target","x":0,"y":5,"c":"G"},{"t":"target","x":4,"y":8,"c":"B"}],
+    tray: {"spectrum":3}, sol: [{"t":"spectrum","x":6,"y":4,"r":0},{"t":"spectrum","x":5,"y":5,"r":0},{"t":"spectrum","x":4,"y":4,"r":1}] },
+  { name: "Split Decision", w: 7, h: 9, items: [{"t":"laser","x":6,"y":5,"r":4,"c":"W"},{"t":"wall","x":2,"y":3},{"t":"wall","x":5,"y":6},{"t":"wall","x":3,"y":4},{"t":"wall","x":5,"y":3},{"t":"target","x":3,"y":8,"c":"W"},{"t":"target","x":0,"y":4,"c":"G"},{"t":"target","x":1,"y":0,"c":"B"},{"t":"target","x":0,"y":8,"c":"R"}],
+    tray: {"dichroR":1,"splitter":1,"spectrum":1}, sol: [{"t":"splitter","x":3,"y":5,"r":3},{"t":"spectrum","x":1,"y":5,"r":0},{"t":"dichroR","x":0,"y":5,"r":3}] },
+  { name: "Rainbow Road", w: 7, h: 9, items: [{"t":"laser","x":6,"y":2,"r":4,"c":"W"},{"t":"wall","x":2,"y":1},{"t":"wall","x":3,"y":7},{"t":"wall","x":2,"y":5},{"t":"wall","x":5,"y":4},{"t":"target","x":6,"y":8,"c":"G"},{"t":"target","x":6,"y":6,"c":"B"},{"t":"target","x":6,"y":7,"c":"R"}],
+    tray: {"mirror":1,"dichroR":1,"spectrum":1}, sol: [{"t":"mirror","x":4,"y":2,"r":3},{"t":"spectrum","x":4,"y":6,"r":1},{"t":"dichroR","x":4,"y":7,"r":1}] },
+  { name: "Green Light", w: 7, h: 9, items: [{"t":"laser","x":4,"y":0,"r":2,"c":"W"},{"t":"wall","x":4,"y":7},{"t":"wall","x":5,"y":5},{"t":"wall","x":4,"y":3},{"t":"wall","x":2,"y":5},{"t":"target","x":6,"y":1,"c":"G"},{"t":"target","x":0,"y":0,"c":"R"},{"t":"target","x":3,"y":0,"c":"B"}],
+    tray: {"dichroG":1,"mirror":2,"spectrum":1,"filterR":1}, sol: [{"t":"dichroG","x":4,"y":1,"r":1},{"t":"mirror","x":4,"y":2,"r":3},{"t":"spectrum","x":3,"y":2,"r":0},{"t":"mirror","x":0,"y":2,"r":1}] },
+  { name: "Spectrograph", w: 7, h: 9, items: [{"t":"laser","x":0,"y":4,"r":0,"c":"W"},{"t":"wall","x":4,"y":3},{"t":"wall","x":1,"y":6},{"t":"wall","x":2,"y":7},{"t":"wall","x":2,"y":6},{"t":"target","x":4,"y":0,"c":"G"},{"t":"target","x":3,"y":0,"c":"B"},{"t":"target","x":6,"y":8,"c":"R"}],
+    tray: {"dichroG":1,"dichroR":1,"spectrum":2,"filterB":1}, sol: [{"t":"dichroG","x":1,"y":4,"r":3},{"t":"spectrum","x":1,"y":3,"r":0},{"t":"spectrum","x":3,"y":4,"r":1},{"t":"dichroR","x":6,"y":4,"r":1}] },
+]},
+{ id: 'guide', name: 'GUIDE', sub: 'Critical angles and optical fibres', pieces: ["critical","water","fibre"], levels: [
+  { name: "Past the Critical Angle", w: 7, h: 9, items: [{"t":"laser","x":0,"y":2,"r":0},{"t":"target","x":4,"y":7}],
+    tray: {"critical":1}, sol: [] },
+  { name: "Glass, Not Water", w: 7, h: 9, items: [{"t":"laser","x":0,"y":1,"r":0},{"t":"target","x":6,"y":6},{"t":"wall","x":6,"y":3}],
+    tray: {"critical":1,"water":1,"rightprism":1}, sol: [] },
+  { name: "Two at Once", w: 7, h: 9, items: [{"t":"laser","x":0,"y":4,"r":0},{"t":"target","x":6,"y":4},{"t":"laser","x":6,"y":1,"r":3},{"t":"target","x":6,"y":7}],
+    tray: {"critical":1,"mirror":1}, sol: [] },
+  { name: "Fibre Run", w: 7, h: 9, items: [{"t":"laser","x":0,"y":1,"r":0},{"t":"fibre","x":2,"y":4,"r":6,"p":1},{"t":"fibre","x":5,"y":7,"r":0,"p":1},{"t":"target","x":6,"y":7},{"t":"wall","x":3,"y":5},{"t":"wall","x":4,"y":5},{"t":"wall","x":5,"y":5},{"t":"wall","x":6,"y":5},{"t":"wall","x":0,"y":5},{"t":"wall","x":1,"y":5},{"t":"wall","x":2,"y":5}],
+    tray: {"mirror":1}, sol: [] },
+  { name: "Total Reflection", w: 7, h: 9, items: [{"t":"laser","x":6,"y":7,"r":4},{"t":"wall","x":4,"y":1},{"t":"wall","x":1,"y":3},{"t":"wall","x":5,"y":3},{"t":"wall","x":4,"y":7},{"t":"fibre","x":3,"y":3,"r":2,"p":1},{"t":"wall","x":3,"y":2},{"t":"fibre","x":3,"y":1,"r":6,"p":1},{"t":"target","x":3,"y":0}],
+    tray: {"critical":3,"water":1}, sol: [{"t":"critical","x":5,"y":7,"r":1},{"t":"critical","x":5,"y":8,"r":5},{"t":"critical","x":3,"y":8,"r":7}] },
+  { name: "Glass Mirrors", w: 7, h: 9, items: [{"t":"laser","x":6,"y":6,"r":4},{"t":"wall","x":2,"y":7},{"t":"wall","x":3,"y":2},{"t":"wall","x":3,"y":7},{"t":"wall","x":5,"y":4},{"t":"fibre","x":4,"y":6,"r":2,"p":1},{"t":"wall","x":4,"y":5},{"t":"fibre","x":4,"y":4,"r":6,"p":1},{"t":"target","x":4,"y":0}],
+    tray: {"critical":2,"rightprism":1,"water":1}, sol: [{"t":"critical","x":5,"y":6,"r":1},{"t":"critical","x":5,"y":7,"r":5},{"t":"rightprism","x":4,"y":7,"r":7}] },
+  { name: "Fibre Optic", w: 7, h: 9, items: [{"t":"laser","x":6,"y":7,"r":4},{"t":"wall","x":4,"y":7},{"t":"wall","x":2,"y":7},{"t":"wall","x":5,"y":3},{"t":"wall","x":1,"y":7},{"t":"fibre","x":6,"y":4,"r":2,"p":1},{"t":"wall","x":6,"y":3},{"t":"fibre","x":6,"y":2,"r":6,"p":1},{"t":"target","x":6,"y":0}],
+    tray: {"critical":2,"mirror":1,"water":1}, sol: [{"t":"critical","x":5,"y":7,"r":7},{"t":"critical","x":5,"y":6,"r":1},{"t":"mirror","x":6,"y":6,"r":3}] },
+  { name: "Patch Cable", w: 7, h: 9, items: [{"t":"laser","x":0,"y":7,"r":0},{"t":"wall","x":1,"y":2},{"t":"wall","x":5,"y":1},{"t":"fibre","x":2,"y":7,"r":4,"p":1},{"t":"wall","x":3,"y":7},{"t":"fibre","x":4,"y":7,"r":0,"p":1},{"t":"target","x":0,"y":4},{"t":"target","x":3,"y":0}],
+    tray: {"critical":2,"splitter":1}, sol: [{"t":"critical","x":5,"y":7,"r":5},{"t":"critical","x":5,"y":4,"r":3},{"t":"splitter","x":3,"y":4,"r":1}] },
+  { name: "Junction Box", w: 7, h: 9, items: [{"t":"laser","x":5,"y":8,"r":6},{"t":"wall","x":3,"y":7},{"t":"wall","x":1,"y":3},{"t":"wall","x":5,"y":5},{"t":"fibre","x":6,"y":5,"r":2,"p":1},{"t":"wall","x":6,"y":4},{"t":"fibre","x":6,"y":3,"r":6,"p":1},{"t":"target","x":6,"y":0},{"t":"target","x":0,"y":2}],
+    tray: {"critical":2,"splitter":1,"water":1}, sol: [{"t":"critical","x":5,"y":7,"r":1},{"t":"critical","x":6,"y":7,"r":5},{"t":"splitter","x":6,"y":2,"r":1}] },
+  { name: "Exchange", w: 7, h: 9, items: [{"t":"laser","x":0,"y":5,"r":0},{"t":"wall","x":2,"y":1},{"t":"wall","x":3,"y":5},{"t":"wall","x":5,"y":2},{"t":"wall","x":3,"y":7},{"t":"fibre","x":3,"y":6,"r":4,"p":1},{"t":"wall","x":4,"y":6},{"t":"fibre","x":5,"y":6,"r":0,"p":1},{"t":"target","x":1,"y":8},{"t":"target","x":6,"y":8}],
+    tray: {"critical":2,"splitter":1}, sol: [{"t":"critical","x":1,"y":5,"r":3},{"t":"splitter","x":1,"y":6,"r":1},{"t":"critical","x":6,"y":6,"r":3}] },
+  { name: "Switchback", w: 7, h: 9, items: [{"t":"laser","x":6,"y":5,"r":4},{"t":"laser","x":1,"y":0,"r":2},{"t":"wall","x":2,"y":7},{"t":"wall","x":4,"y":5},{"t":"wall","x":1,"y":7},{"t":"wall","x":2,"y":4},{"t":"target","x":0,"y":6},{"t":"target","x":0,"y":0}],
+    tray: {"mirror":1,"critical":3,"water":1}, sol: [{"t":"mirror","x":5,"y":5,"r":1},{"t":"critical","x":5,"y":3,"r":3},{"t":"critical","x":1,"y":6,"r":5},{"t":"critical","x":0,"y":3,"r":7}] },
+  { name: "Light Pipe", w: 7, h: 9, items: [{"t":"laser","x":5,"y":8,"r":6},{"t":"laser","x":0,"y":5,"r":0},{"t":"wall","x":5,"y":4},{"t":"wall","x":5,"y":3},{"t":"wall","x":4,"y":1},{"t":"wall","x":4,"y":5},{"t":"target","x":0,"y":8},{"t":"target","x":6,"y":8}],
+    tray: {"critical":3,"mirror":1,"water":1}, sol: [{"t":"critical","x":5,"y":7,"r":1},{"t":"critical","x":1,"y":5,"r":3},{"t":"critical","x":6,"y":7,"r":3},{"t":"mirror","x":1,"y":8,"r":3}] },
+]},
+{ id: 'instrument', name: 'INSTRUMENT', sub: 'Telescopes and compound optics', pieces: ["ball","aspheric","fresnel","posmeniscus","negmeniscus","planoconcave"], levels: [
+  { name: "Ball Lens", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":4,"r":0},{"t":"target","x":3,"y":4,"s":"focus"}],
+    tray: {"ball":1,"convex":1}, sol: [] },
+  { name: "Glass Case", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":2,"r":0},{"t":"plate","x":2,"y":2,"r":0},{"t":"plate","x":3,"y":2,"r":0},{"t":"plate","x":4,"y":2,"r":0},{"t":"plate","x":5,"y":2,"r":0},{"t":"target","x":6,"y":2,"s":"focus"}],
+    tray: {"fresnel":1,"convex":1,"planoconvex":1}, sol: [] },
+  { name: "Strong and Weak", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":2,"r":0},{"t":"target","x":2,"y":2,"s":"focus"},{"t":"bundle","x":0,"y":6,"r":0},{"t":"target","x":6,"y":6,"s":"focus"},{"t":"plate","x":3,"y":6,"r":0},{"t":"plate","x":4,"y":6,"r":0},{"t":"plate","x":5,"y":6,"r":0}],
+    tray: {"aspheric":1,"posmeniscus":1,"convex":1}, sol: [] },
+  { name: "Projector", w: 7, h: 9, items: [{"t":"bulb","x":0,"y":4,"r":0},{"t":"target","x":6,"y":4},{"t":"wall","x":1,"y":3},{"t":"wall","x":1,"y":5}],
+    tray: {"convex":1,"planoconvex":1,"posmeniscus":1}, sol: [] },
+  { name: "Meniscus", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":4,"r":0,"w":0.2},{"t":"target","x":6,"y":4,"s":"focus"},{"t":"plate","x":3,"y":4,"r":0},{"t":"plate","x":4,"y":4,"r":0},{"t":"plate","x":5,"y":4,"r":0}],
+    tray: {"negmeniscus":1,"convex":1,"concave":1,"planoconcave":1}, sol: [] },
+  { name: "Zoom", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":1,"r":0,"w":0.2},{"t":"target","x":6,"y":1,"s":"focus"},{"t":"bundle","x":0,"y":6,"r":0},{"t":"target","x":5,"y":6,"s":"focus"}],
+    tray: {"planoconcave":1,"planoconvex":1,"posmeniscus":1,"convex":1}, sol: [] },
+  { name: "Beam Reducer", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":4,"r":0},{"t":"slit","x":3,"y":4,"r":0},{"t":"slot","x":5,"y":4,"r":0},{"t":"target","x":6,"y":4}],
+    tray: {"convex":1,"aspheric":1,"concave":1}, sol: [] },
+  { name: "Folded Telescope", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":1,"r":0},{"t":"slot","x":4,"y":6,"r":2},{"t":"target","x":4,"y":8},{"t":"wall","x":5,"y":1}],
+    tray: {"convex":1,"aspheric":1,"mirror":1}, sol: [] },
+  { name: "Periscope", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":7,"r":0},{"t":"target","x":6,"y":1,"s":"focus"},{"t":"wall","x":1,"y":4},{"t":"wall","x":2,"y":4},{"t":"wall","x":3,"y":4},{"t":"wall","x":4,"y":4},{"t":"wall","x":6,"y":7}],
+    tray: {"mirror":2,"convex":1,"planoconvex":1}, sol: [] },
+  { name: "Long and Short", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":1,"r":0},{"t":"target","x":1,"y":3,"s":"focus"},{"t":"target","x":6,"y":1,"s":"focus"},{"t":"plate","x":3,"y":1,"r":0},{"t":"plate","x":4,"y":1,"r":0},{"t":"plate","x":5,"y":1,"r":0}],
+    tray: {"splitter":1,"aspheric":1,"posmeniscus":1,"convex":1,"fresnel":1}, sol: [] },
+  { name: "Two Telescopes", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":1,"r":0},{"t":"slit","x":3,"y":1,"r":0},{"t":"slot","x":5,"y":1,"r":0},{"t":"target","x":6,"y":1},{"t":"bundle","x":0,"y":6,"r":0},{"t":"slit","x":2,"y":6,"r":0},{"t":"target","x":6,"y":6}],
+    tray: {"convex":1,"aspheric":2,"ball":1}, sol: [] },
+  { name: "Instrument Maker", w: 7, h: 9, items: [{"t":"bundle","x":0,"y":0,"r":0},{"t":"slit","x":4,"y":2,"r":2},{"t":"slot","x":4,"y":7,"r":2},{"t":"target","x":4,"y":8},{"t":"target","x":1,"y":5,"s":"focus"}],
+    tray: {"concavemirror":1,"aspheric":1,"convex":1,"splitter":1,"planoconvex":1}, sol: [{"t":"splitter","x":1,"y":0,"r":1},{"t":"concavemirror","x":4,"y":0,"r":3},{"t":"aspheric","x":4,"y":3,"r":2},{"t":"convex","x":1,"y":3,"r":2}] },
+]},
+{ id: 'mastery', name: 'MASTERY', sub: 'Every piece, no mercy', pieces: [], levels: [
+  { name: "Prologue", w: 7, h: 9, items: [{"t":"laser","x":3,"y":8,"r":6,"c":"Y"},{"t":"laser","x":2,"y":8,"r":6,"c":"W"},{"t":"wall","x":1,"y":4},{"t":"wall","x":1,"y":5},{"t":"wall","x":4,"y":2},{"t":"wall","x":4,"y":5},{"t":"wall","x":1,"y":6},{"t":"jog","x":2,"y":3,"r":6},{"t":"target","x":2,"y":0,"c":"W"},{"t":"target","x":6,"y":3},{"t":"target","x":6,"y":4,"c":"W"}],
+    tray: {"critical":1,"spectrum":1,"block":1,"rightprism":1,"splitter":1}, sol: [{"t":"critical","x":3,"y":3,"r":1},{"t":"block","x":2,"y":7,"r":3},{"t":"splitter","x":2,"y":4,"r":3}] },
+  { name: "Detour Through Glass", w: 7, h: 9, items: [{"t":"laser","x":0,"y":3,"r":0,"c":"Y"},{"t":"laser","x":0,"y":8,"r":6,"c":"Y"},{"t":"wall","x":2,"y":7},{"t":"wall","x":5,"y":1},{"t":"wall","x":2,"y":1},{"t":"wall","x":4,"y":4},{"t":"wall","x":5,"y":3},{"t":"jog","x":4,"y":5,"r":4},{"t":"target","x":3,"y":0},{"t":"target","x":6,"y":5}],
+    tray: {"dichroG":1,"critical":1,"block":1,"rightprism":1,"spectrum":1}, sol: [{"t":"critical","x":3,"y":3,"r":5},{"t":"block","x":0,"y":7,"r":3},{"t":"rightprism","x":0,"y":5,"r":1}] },
+  { name: "Red Shift", w: 7, h: 9, items: [{"t":"laser","x":6,"y":0,"r":4,"c":"W"},{"t":"laser","x":3,"y":0,"r":2,"c":"W"},{"t":"wall","x":4,"y":4},{"t":"wall","x":4,"y":7},{"t":"wall","x":1,"y":5},{"t":"wall","x":1,"y":3},{"t":"target","x":5,"y":8,"c":"W"},{"t":"target","x":0,"y":6,"c":"R"},{"t":"target","x":2,"y":8,"c":"G"},{"t":"target","x":0,"y":7,"c":"B"}],
+    tray: {"spectrum":1,"corner":1,"dichroR":1,"rightprism":2,"critical":1}, sol: [{"t":"rightprism","x":5,"y":0,"r":1},{"t":"dichroR","x":3,"y":6,"r":3},{"t":"spectrum","x":3,"y":7,"r":0}] },
+  { name: "Four Corners", w: 7, h: 9, items: [{"t":"laser","x":6,"y":3,"r":4,"c":"W"},{"t":"laser","x":2,"y":0,"r":2,"c":"W"},{"t":"wall","x":4,"y":5},{"t":"wall","x":5,"y":2},{"t":"wall","x":5,"y":1},{"t":"wall","x":3,"y":5},{"t":"wall","x":4,"y":4},{"t":"target","x":0,"y":1,"c":"W"},{"t":"target","x":0,"y":3,"c":"R"},{"t":"target","x":0,"y":5,"c":"G"},{"t":"target","x":0,"y":7,"c":"B"}],
+    tray: {"critical":2,"spectrum":1,"mirror":1,"rightprism":1,"dichroR":1}, sol: [{"t":"spectrum","x":2,"y":3,"r":1},{"t":"critical","x":2,"y":1,"r":5},{"t":"rightprism","x":2,"y":4,"r":3}] },
+  { name: "Constellation", w: 7, h: 9, items: [{"t":"laser","x":0,"y":5,"r":0,"c":"W"},{"t":"laser","x":0,"y":4,"r":0,"c":"Y"},{"t":"wall","x":4,"y":6},{"t":"wall","x":1,"y":1},{"t":"wall","x":3,"y":3},{"t":"wall","x":5,"y":2},{"t":"wall","x":4,"y":2},{"t":"target","x":2,"y":0},{"t":"target","x":2,"y":8,"c":"R"},{"t":"target","x":0,"y":8,"c":"G"},{"t":"target","x":0,"y":6,"c":"B"}],
+    tray: {"rightprism":2,"critical":1,"mirror":1,"corner":1,"spectrum":1}, sol: [{"t":"rightprism","x":2,"y":5,"r":3},{"t":"spectrum","x":2,"y":6,"r":0},{"t":"rightprism","x":2,"y":4,"r":5}] },
+  { name: "Prism Break", w: 7, h: 9, items: [{"t":"laser","x":6,"y":1,"r":4,"c":"W"},{"t":"wall","x":3,"y":4},{"t":"wall","x":1,"y":4},{"t":"wall","x":4,"y":5},{"t":"wall","x":3,"y":5},{"t":"wall","x":5,"y":7},{"t":"wall","x":1,"y":7},{"t":"wall","x":4,"y":7},{"t":"target","x":0,"y":1,"c":"R"},{"t":"target","x":0,"y":3,"c":"G"},{"t":"target","x":0,"y":0,"c":"B"}],
+    tray: {"spectrum":2,"rightprism":1,"critical":1,"mirror":1}, sol: [{"t":"spectrum","x":5,"y":1,"r":1},{"t":"spectrum","x":3,"y":3,"r":0},{"t":"rightprism","x":5,"y":2,"r":1},{"t":"mirror","x":6,"y":4,"r":3}] },
+  { name: "Critical Mass", w: 7, h: 9, items: [{"t":"laser","x":0,"y":1,"r":0,"c":"W"},{"t":"wall","x":5,"y":7},{"t":"wall","x":3,"y":4},{"t":"wall","x":5,"y":3},{"t":"wall","x":4,"y":4},{"t":"wall","x":3,"y":7},{"t":"wall","x":5,"y":6},{"t":"wall","x":4,"y":5},{"t":"target","x":5,"y":0,"c":"G"},{"t":"target","x":3,"y":0,"c":"B"},{"t":"target","x":4,"y":0,"c":"R"}],
+    tray: {"critical":2,"rightprism":1,"splitter":1,"spectrum":1}, sol: [{"t":"critical","x":1,"y":1,"r":3},{"t":"critical","x":1,"y":2,"r":7},{"t":"spectrum","x":3,"y":2,"r":1},{"t":"rightprism","x":4,"y":2,"r":5}] },
+  { name: "Cascade", w: 7, h: 9, items: [{"t":"laser","x":0,"y":4,"r":0,"c":"W"},{"t":"laser","x":6,"y":4,"r":4,"c":"W"},{"t":"wall","x":4,"y":6},{"t":"wall","x":2,"y":1},{"t":"wall","x":5,"y":2},{"t":"wall","x":2,"y":4},{"t":"target","x":1,"y":0,"c":"W"},{"t":"target","x":0,"y":5,"c":"R"},{"t":"target","x":0,"y":8,"c":"G"},{"t":"target","x":3,"y":8,"c":"B"}],
+    tray: {"spectrum":2,"critical":1,"rightprism":2,"mirror":1}, sol: [{"t":"critical","x":1,"y":4,"r":5},{"t":"rightprism","x":5,"y":4,"r":1},{"t":"rightprism","x":5,"y":5,"r":5},{"t":"spectrum","x":3,"y":5,"r":1}] },
+  { name: "Clockwork", w: 7, h: 9, items: [{"t":"laser","x":0,"y":0,"r":2,"c":"Y"},{"t":"laser","x":6,"y":5,"r":4,"c":"W"},{"t":"wall","x":3,"y":3},{"t":"wall","x":3,"y":1},{"t":"wall","x":1,"y":3},{"t":"wall","x":3,"y":2},{"t":"wall","x":1,"y":7},{"t":"wall","x":5,"y":3},{"t":"wall","x":1,"y":5},{"t":"wall","x":2,"y":2},{"t":"wall","x":1,"y":1},{"t":"jog","x":0,"y":4,"r":2},{"t":"target","x":0,"y":8},{"t":"target","x":6,"y":2,"c":"R"},{"t":"target","x":2,"y":8,"c":"G"},{"t":"target","x":5,"y":8,"c":"B"}],
+    tray: {"block":1,"mirror":1,"rightprism":1,"spectrum":1,"critical":1}, sol: [{"t":"block","x":0,"y":1,"r":3},{"t":"spectrum","x":5,"y":5,"r":1},{"t":"mirror","x":4,"y":5,"r":1},{"t":"rightprism","x":4,"y":2,"r":1}] },
+  { name: "Glass Labyrinth", w: 7, h: 9, items: [{"t":"laser","x":0,"y":2,"r":0},{"t":"wall","x":5,"y":2},{"t":"wall","x":1,"y":6},{"t":"wall","x":2,"y":2},{"t":"wall","x":5,"y":1},{"t":"jog","x":4,"y":3,"r":0},{"t":"target","x":6,"y":4},{"t":"target","x":6,"y":3}],
+    tray: {"rightprism":2,"splitter":1,"block":1,"spectrum":1,"critical":1}, sol: [{"t":"rightprism","x":1,"y":2,"r":3},{"t":"splitter","x":1,"y":3,"r":1},{"t":"rightprism","x":1,"y":4,"r":7},{"t":"block","x":2,"y":3,"r":1}] },
+  { name: "White Out", w: 7, h: 9, items: [{"t":"laser","x":6,"y":4,"r":4,"c":"W"},{"t":"wall","x":5,"y":7},{"t":"wall","x":1,"y":6},{"t":"wall","x":1,"y":2},{"t":"wall","x":3,"y":1},{"t":"wall","x":1,"y":7},{"t":"wall","x":3,"y":5},{"t":"wall","x":5,"y":5},{"t":"target","x":2,"y":0,"c":"R"},{"t":"target","x":6,"y":1,"c":"G"},{"t":"target","x":0,"y":3,"c":"B"}],
+    tray: {"spectrum":2,"critical":1,"rightprism":2}, sol: [{"t":"spectrum","x":5,"y":4,"r":0},{"t":"rightprism","x":2,"y":4,"r":7},{"t":"critical","x":4,"y":3,"r":0},{"t":"spectrum","x":5,"y":3,"r":1}] },
+  { name: "Final Light", w: 7, h: 9, items: [{"t":"laser","x":0,"y":5,"r":0},{"t":"wall","x":2,"y":1},{"t":"wall","x":5,"y":3},{"t":"wall","x":3,"y":2},{"t":"wall","x":4,"y":5},{"t":"jog","x":1,"y":2,"r":6},{"t":"target","x":6,"y":0},{"t":"target","x":0,"y":1}],
+    tray: {"rightprism":2,"splitter":1,"block":1,"critical":1,"spectrum":1}, sol: [{"t":"rightprism","x":1,"y":5,"r":5},{"t":"block","x":1,"y":4,"r":3},{"t":"splitter","x":1,"y":1,"r":1},{"t":"rightprism","x":1,"y":0,"r":1}] },
+]},
 ];
 root.BEAMS_PACKS = PACKS;
 })(typeof window !== 'undefined' ? window : globalThis);
 
-window.BEAMS_META = {"1-1":{"name":"First Light","min":1,"sol":[{"t":"mirror","x":4,"y":1,"r":1}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"1-2":{"name":"Dogleg","min":2,"sol":[{"t":"mirror","x":4,"y":0,"r":1},{"t":"mirror","x":4,"y":8,"r":1}],"allow":1,"count":2,"complete":true,"searched":2,"verified":true},"1-3":{"name":"Detour","min":3,"sol":[{"t":"mirror","x":1,"y":4,"r":1},{"t":"mirror","x":1,"y":7,"r":1},{"t":"mirror","x":6,"y":7,"r":3}],"allow":0,"count":4,"complete":true,"searched":3,"verified":true},"1-4":{"name":"Double Duty","min":1,"sol":[{"t":"mirror","x":3,"y":3,"r":1}],"allow":0,"count":2,"complete":true,"searched":1,"verified":true},"1-5":{"name":"Crosswalk","min":2,"sol":[{"t":"mirror","x":6,"y":4,"r":3},{"t":"mirror","x":3,"y":0,"r":1}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"1-6":{"name":"Diagonal","min":2,"sol":[{"t":"mirror","x":1,"y":7,"r":2},{"t":"mirror","x":0,"y":6,"r":2}],"allow":0,"count":3,"complete":true,"searched":2,"verified":true},"1-7":{"name":"Fork","min":1,"sol":[{"t":"splitter","x":3,"y":4,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"1-8":{"name":"Trident","min":2,"sol":[{"t":"splitter","x":2,"y":2,"r":1},{"t":"splitter","x":4,"y":2,"r":1}],"allow":0,"count":1,"complete":true,"searched":2,"verified":true},"1-9":{"name":"Echo Chamber","min":4,"sol":[{"t":"mirror","x":5,"y":3,"r":3},{"t":"splitter","x":5,"y":5,"r":3},{"t":"splitter","x":5,"y":7,"r":3},{"t":"mirror","x":5,"y":8,"r":1}],"allow":0,"count":2,"complete":true,"searched":4,"verified":true},"1-10":{"name":"Hall of Mirrors","min":3,"sol":[{"t":"mirror","x":3,"y":5,"r":3},{"t":"splitter","x":2,"y":2,"r":1},{"t":"mirror","x":2,"y":3,"r":3}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"1-11":{"name":"Crossroads","min":3,"sol":[{"t":"mirror","x":5,"y":4,"r":3},{"t":"splitter","x":1,"y":4,"r":1},{"t":"mirror","x":2,"y":5,"r":1}],"allow":1,"count":2,"complete":true,"searched":3,"verified":true},"1-12":{"name":"Switchboard","min":3,"sol":[{"t":"mirror","x":6,"y":3,"r":3},{"t":"splitter","x":5,"y":3,"r":1},{"t":"mirror","x":1,"y":4,"r":1}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"2-1":{"name":"Converge","min":1,"sol":[{"t":"convex","x":3,"y":4,"r":0}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"2-2":{"name":"Fold","min":2,"sol":[{"t":"mirror","x":4,"y":2,"r":1},{"t":"convex","x":4,"y":5,"r":2}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"2-3":{"name":"Pinhole","min":2,"sol":[{"t":"convex","x":1,"y":4,"r":0},{"t":"convex","x":4,"y":4,"r":0}],"allow":0,"count":2,"complete":true,"searched":2,"verified":true},"2-4":{"name":"Squeeze","min":2,"sol":[{"t":"convex","x":1,"y":4,"r":0},{"t":"concave","x":2,"y":4,"r":0}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"2-5":{"name":"Lamplight","min":2,"sol":[{"t":"convex","x":1,"y":2,"r":2},{"t":"mirror","x":1,"y":6,"r":1}],"allow":1,"count":2,"complete":true,"searched":2,"verified":true},"2-6":{"name":"Two Lenses","min":2,"sol":[{"t":"convex","x":2,"y":2,"r":0},{"t":"planoconvex","x":2,"y":6,"r":0}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"2-7":{"name":"Split Focus","min":3,"sol":[{"t":"splitter","x":3,"y":1,"r":1},{"t":"convex","x":4,"y":1,"r":0},{"t":"planoconvex","x":3,"y":4,"r":2}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"2-8":{"name":"Image","min":2,"sol":[{"t":"convex","x":3,"y":1,"r":0},{"t":"mirror","x":5,"y":1,"r":1}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"2-9":{"name":"Relay","min":3,"sol":[{"t":"mirror","x":6,"y":0,"r":1},{"t":"convex","x":6,"y":1,"r":2},{"t":"convex","x":6,"y":5,"r":2}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"2-10":{"name":"Choose Wisely","min":4,"sol":[{"t":"convex","x":1,"y":4,"r":0},{"t":"concave","x":2,"y":4,"r":0},{"t":"mirror","x":5,"y":4,"r":3},{"t":"planoconvex","x":5,"y":3,"r":2}],"allow":2,"count":2,"complete":true,"searched":4,"verified":true},"2-11":{"name":"Lighthouse","min":3,"sol":[{"t":"convex","x":3,"y":7,"r":2},{"t":"convex","x":3,"y":6,"r":2},{"t":"splitter","x":3,"y":3,"r":1}],"allow":1,"count":3,"complete":true,"searched":3,"verified":true},"2-12":{"name":"Observatory","min":7,"sol":[{"t":"convex","x":2,"y":0,"r":0},{"t":"splitter","x":5,"y":0,"r":1},{"t":"convex","x":5,"y":1,"r":2},{"t":"convex","x":5,"y":5,"r":2},{"t":"mirror","x":5,"y":8,"r":3},{"t":"mirror","x":6,"y":0,"r":1},{"t":"planoconvex","x":6,"y":2,"r":2}],"allow":2,"count":0,"complete":false,"searched":3,"verified":true},"3-1":{"name":"Glass Corner","min":1,"sol":[{"t":"rightprism","x":4,"y":1,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"3-2":{"name":"One Way","min":2,"sol":[{"t":"rightprism","x":3,"y":4,"r":3},{"t":"rightprism","x":3,"y":2,"r":7}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"3-3":{"name":"Nudge","min":1,"sol":[{"t":"block","x":1,"y":4,"r":1}],"allow":0,"count":3,"complete":true,"searched":1,"verified":true},"3-4":{"name":"Lean the Other Way","min":1,"sol":[{"t":"block","x":4,"y":2,"r":1}],"allow":0,"count":3,"complete":true,"searched":1,"verified":true},"3-5":{"name":"Staircase","min":3,"sol":[{"t":"rightprism","x":2,"y":7,"r":1},{"t":"rightprism","x":3,"y":7,"r":3},{"t":"rightprism","x":3,"y":8,"r":7}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"3-6":{"name":"Thread the Needle","min":3,"sol":[{"t":"mirror","x":1,"y":5,"r":3},{"t":"block","x":1,"y":4,"r":1},{"t":"rightprism","x":1,"y":2,"r":1}],"allow":0,"count":12,"complete":true,"searched":3,"verified":true},"3-7":{"name":"Glass Hook","min":3,"sol":[{"t":"rightprism","x":3,"y":1,"r":5},{"t":"block","x":2,"y":1,"r":1},{"t":"rightprism","x":0,"y":1,"r":1}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"3-8":{"name":"Sidestep","min":3,"sol":[{"t":"rightprism","x":1,"y":1,"r":3},{"t":"block","x":1,"y":2,"r":3},{"t":"rightprism","x":1,"y":7,"r":7}],"allow":0,"count":3,"complete":true,"searched":3,"verified":true},"3-9":{"name":"Three Ways","min":3,"sol":[{"t":"rightprism","x":4,"y":7,"r":3},{"t":"splitter","x":3,"y":7,"r":1},{"t":"splitter","x":3,"y":2,"r":1}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"3-10":{"name":"Refraction Run","min":4,"sol":[{"t":"rightprism","x":1,"y":0,"r":7},{"t":"block","x":2,"y":0,"r":3},{"t":"splitter","x":1,"y":3,"r":0},{"t":"rightprism","x":0,"y":5,"r":7}],"allow":0,"count":53,"complete":true,"searched":4,"verified":true},"3-11":{"name":"Crossfire","min":4,"sol":[{"t":"block","x":1,"y":2,"r":3},{"t":"splitter","x":5,"y":2,"r":3},{"t":"rightprism","x":6,"y":2,"r":3},{"t":"rightprism","x":1,"y":3,"r":5}],"allow":0,"count":7,"complete":true,"searched":4,"verified":true},"3-12":{"name":"Glasshouse","min":4,"sol":[{"t":"mirror","x":1,"y":5,"r":3},{"t":"block","x":1,"y":4,"r":3},{"t":"splitter","x":1,"y":1,"r":1},{"t":"rightprism","x":1,"y":0,"r":1}],"allow":0,"count":13,"complete":true,"searched":4,"verified":true},"4-1":{"name":"Bounce and Focus","min":1,"sol":[{"t":"concavemirror","x":4,"y":2,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"4-2":{"name":"Long Throw","min":1,"sol":[{"t":"parabolic","x":5,"y":6,"r":5}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"4-3":{"name":"Choose the Curve","min":1,"sol":[{"t":"parabolic","x":5,"y":1,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"4-4":{"name":"Point to Point","min":1,"sol":[{"t":"elliptical","x":3,"y":2,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"4-5":{"name":"Collimator","min":1,"sol":[{"t":"concavemirror","x":4,"y":1,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"4-6":{"name":"Pinhole Mirror","min":2,"sol":[{"t":"concavemirror","x":4,"y":1,"r":3},{"t":"convex","x":4,"y":5,"r":2}],"allow":1,"count":2,"complete":true,"searched":2,"verified":true},"4-7":{"name":"Measure Twice","min":2,"sol":[{"t":"mirror","x":2,"y":7,"r":1},{"t":"elliptical","x":2,"y":0,"r":2}],"allow":0,"count":4,"complete":true,"searched":2,"verified":true},"4-8":{"name":"Telephoto","min":2,"sol":[{"t":"convexmirror","x":3,"y":0,"r":3},{"t":"convex","x":3,"y":1,"r":2}],"allow":0,"count":1,"complete":true,"searched":2,"verified":true},"4-9":{"name":"Relay Mirrors","min":2,"sol":[{"t":"concavemirror","x":4,"y":1,"r":3},{"t":"concavemirror","x":4,"y":5,"r":5}],"allow":0,"count":1,"complete":true,"searched":2,"verified":true},"4-10":{"name":"Searchlight","min":2,"sol":[{"t":"concavemirror","x":1,"y":2,"r":7},{"t":"splitter","x":4,"y":2,"r":1}],"allow":0,"count":1,"complete":true,"searched":2,"verified":true},"4-11":{"name":"Two Foci","min":3,"sol":[{"t":"splitter","x":1,"y":4,"r":1},{"t":"parabolic","x":6,"y":4,"r":3},{"t":"elliptical","x":1,"y":7,"r":6}],"allow":0,"count":4,"complete":true,"searched":3,"verified":true},"4-12":{"name":"Twin Telescope","min":4,"sol":[{"t":"splitter","x":1,"y":0,"r":1},{"t":"parabolic","x":5,"y":0,"r":3},{"t":"concavemirror","x":5,"y":5,"r":5},{"t":"concavemirror","x":1,"y":4,"r":7}],"allow":0,"count":2,"complete":false,"searched":3,"verified":true}};
+window.BEAMS_META = {"1-1":{"name":"First Light","min":1,"sol":[{"t":"mirror","x":4,"y":1,"r":1}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"1-2":{"name":"Dogleg","min":2,"sol":[{"t":"mirror","x":4,"y":0,"r":1},{"t":"mirror","x":4,"y":8,"r":1}],"allow":1,"count":2,"complete":true,"searched":2,"verified":true},"1-3":{"name":"Detour","min":3,"sol":[{"t":"mirror","x":1,"y":4,"r":1},{"t":"mirror","x":1,"y":7,"r":1},{"t":"mirror","x":6,"y":7,"r":3}],"allow":0,"count":4,"complete":true,"searched":3,"verified":true},"1-4":{"name":"Double Duty","min":1,"sol":[{"t":"mirror","x":3,"y":3,"r":1}],"allow":0,"count":2,"complete":true,"searched":1,"verified":true},"1-5":{"name":"Crosswalk","min":2,"sol":[{"t":"mirror","x":6,"y":4,"r":3},{"t":"mirror","x":3,"y":0,"r":1}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"1-6":{"name":"Diagonal","min":2,"sol":[{"t":"mirror","x":1,"y":7,"r":2},{"t":"mirror","x":0,"y":6,"r":2}],"allow":0,"count":3,"complete":true,"searched":2,"verified":true},"1-7":{"name":"Fork","min":1,"sol":[{"t":"splitter","x":3,"y":4,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"1-8":{"name":"Trident","min":2,"sol":[{"t":"splitter","x":2,"y":2,"r":1},{"t":"splitter","x":4,"y":2,"r":1}],"allow":0,"count":1,"complete":true,"searched":2,"verified":true},"1-9":{"name":"Echo Chamber","min":4,"sol":[{"t":"mirror","x":5,"y":3,"r":3},{"t":"splitter","x":5,"y":5,"r":3},{"t":"splitter","x":5,"y":7,"r":3},{"t":"mirror","x":5,"y":8,"r":1}],"allow":0,"count":2,"complete":true,"searched":4,"verified":true},"1-10":{"name":"Hall of Mirrors","min":3,"sol":[{"t":"mirror","x":3,"y":5,"r":3},{"t":"splitter","x":2,"y":2,"r":1},{"t":"mirror","x":2,"y":3,"r":3}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"1-11":{"name":"Crossroads","min":3,"sol":[{"t":"mirror","x":5,"y":4,"r":3},{"t":"splitter","x":1,"y":4,"r":1},{"t":"mirror","x":2,"y":5,"r":1}],"allow":1,"count":2,"complete":true,"searched":3,"verified":true},"1-12":{"name":"Switchboard","min":3,"sol":[{"t":"mirror","x":6,"y":3,"r":3},{"t":"splitter","x":5,"y":3,"r":1},{"t":"mirror","x":1,"y":4,"r":1}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"2-1":{"name":"Converge","min":1,"sol":[{"t":"convex","x":3,"y":4,"r":0}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"2-2":{"name":"Fold","min":2,"sol":[{"t":"mirror","x":4,"y":2,"r":1},{"t":"convex","x":4,"y":5,"r":2}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"2-3":{"name":"Pinhole","min":2,"sol":[{"t":"convex","x":1,"y":4,"r":0},{"t":"convex","x":4,"y":4,"r":0}],"allow":0,"count":2,"complete":true,"searched":2,"verified":true},"2-4":{"name":"Squeeze","min":2,"sol":[{"t":"convex","x":1,"y":4,"r":0},{"t":"concave","x":2,"y":4,"r":0}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"2-5":{"name":"Lamplight","min":2,"sol":[{"t":"convex","x":1,"y":2,"r":2},{"t":"mirror","x":1,"y":6,"r":1}],"allow":1,"count":2,"complete":true,"searched":2,"verified":true},"2-6":{"name":"Two Lenses","min":2,"sol":[{"t":"convex","x":2,"y":2,"r":0},{"t":"planoconvex","x":2,"y":6,"r":0}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"2-7":{"name":"Split Focus","min":3,"sol":[{"t":"splitter","x":3,"y":1,"r":1},{"t":"convex","x":4,"y":1,"r":0},{"t":"planoconvex","x":3,"y":4,"r":2}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"2-8":{"name":"Image","min":2,"sol":[{"t":"convex","x":3,"y":1,"r":0},{"t":"mirror","x":5,"y":1,"r":1}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"2-9":{"name":"Relay","min":3,"sol":[{"t":"mirror","x":6,"y":0,"r":1},{"t":"convex","x":6,"y":1,"r":2},{"t":"convex","x":6,"y":5,"r":2}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"2-10":{"name":"Choose Wisely","min":4,"sol":[{"t":"convex","x":1,"y":4,"r":0},{"t":"concave","x":2,"y":4,"r":0},{"t":"mirror","x":5,"y":4,"r":3},{"t":"planoconvex","x":5,"y":3,"r":2}],"allow":2,"count":2,"complete":true,"searched":4,"verified":true},"2-11":{"name":"Lighthouse","min":3,"sol":[{"t":"convex","x":3,"y":7,"r":2},{"t":"convex","x":3,"y":6,"r":2},{"t":"splitter","x":3,"y":3,"r":1}],"allow":1,"count":3,"complete":true,"searched":3,"verified":true},"2-12":{"name":"Observatory","min":7,"sol":[{"t":"convex","x":2,"y":0,"r":0},{"t":"splitter","x":5,"y":0,"r":1},{"t":"convex","x":5,"y":1,"r":2},{"t":"convex","x":5,"y":5,"r":2},{"t":"mirror","x":5,"y":8,"r":3},{"t":"mirror","x":6,"y":0,"r":1},{"t":"planoconvex","x":6,"y":2,"r":2}],"allow":2,"count":0,"complete":false,"searched":3,"verified":true},"3-1":{"name":"Glass Corner","min":1,"sol":[{"t":"rightprism","x":4,"y":1,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"3-2":{"name":"One Way","min":2,"sol":[{"t":"rightprism","x":3,"y":4,"r":3},{"t":"rightprism","x":3,"y":2,"r":7}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"3-3":{"name":"Nudge","min":1,"sol":[{"t":"block","x":1,"y":4,"r":1}],"allow":0,"count":3,"complete":true,"searched":1,"verified":true},"3-4":{"name":"Lean the Other Way","min":1,"sol":[{"t":"block","x":4,"y":2,"r":1}],"allow":0,"count":3,"complete":true,"searched":1,"verified":true},"3-5":{"name":"Staircase","min":3,"sol":[{"t":"rightprism","x":2,"y":7,"r":1},{"t":"rightprism","x":3,"y":7,"r":3},{"t":"rightprism","x":3,"y":8,"r":7}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"3-6":{"name":"Thread the Needle","min":3,"sol":[{"t":"mirror","x":1,"y":5,"r":3},{"t":"block","x":1,"y":4,"r":1},{"t":"rightprism","x":1,"y":2,"r":1}],"allow":0,"count":12,"complete":true,"searched":3,"verified":true},"3-7":{"name":"Glass Hook","min":3,"sol":[{"t":"rightprism","x":3,"y":1,"r":5},{"t":"block","x":2,"y":1,"r":1},{"t":"rightprism","x":0,"y":1,"r":1}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"3-8":{"name":"Sidestep","min":3,"sol":[{"t":"rightprism","x":1,"y":1,"r":3},{"t":"block","x":1,"y":2,"r":3},{"t":"rightprism","x":1,"y":7,"r":7}],"allow":0,"count":3,"complete":true,"searched":3,"verified":true},"3-9":{"name":"Three Ways","min":3,"sol":[{"t":"rightprism","x":4,"y":7,"r":3},{"t":"splitter","x":3,"y":7,"r":1},{"t":"splitter","x":3,"y":2,"r":1}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"3-10":{"name":"Refraction Run","min":4,"sol":[{"t":"rightprism","x":1,"y":0,"r":7},{"t":"block","x":2,"y":0,"r":3},{"t":"splitter","x":1,"y":3,"r":0},{"t":"rightprism","x":0,"y":5,"r":7}],"allow":0,"count":53,"complete":true,"searched":4,"verified":true},"3-11":{"name":"Crossfire","min":4,"sol":[{"t":"block","x":1,"y":2,"r":3},{"t":"splitter","x":5,"y":2,"r":3},{"t":"rightprism","x":6,"y":2,"r":3},{"t":"rightprism","x":1,"y":3,"r":5}],"allow":0,"count":7,"complete":true,"searched":4,"verified":true},"3-12":{"name":"Glasshouse","min":4,"sol":[{"t":"mirror","x":1,"y":5,"r":3},{"t":"block","x":1,"y":4,"r":3},{"t":"splitter","x":1,"y":1,"r":1},{"t":"rightprism","x":1,"y":0,"r":1}],"allow":0,"count":13,"complete":true,"searched":4,"verified":true},"4-1":{"name":"Bounce and Focus","min":1,"sol":[{"t":"concavemirror","x":4,"y":2,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"4-2":{"name":"Long Throw","min":1,"sol":[{"t":"parabolic","x":5,"y":6,"r":5}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"4-3":{"name":"Choose the Curve","min":1,"sol":[{"t":"parabolic","x":5,"y":1,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"4-4":{"name":"Point to Point","min":1,"sol":[{"t":"elliptical","x":3,"y":2,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"4-5":{"name":"Collimator","min":1,"sol":[{"t":"concavemirror","x":4,"y":1,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"4-6":{"name":"Pinhole Mirror","min":2,"sol":[{"t":"concavemirror","x":4,"y":1,"r":3},{"t":"convex","x":4,"y":5,"r":2}],"allow":1,"count":2,"complete":true,"searched":2,"verified":true},"4-7":{"name":"Measure Twice","min":2,"sol":[{"t":"mirror","x":2,"y":7,"r":1},{"t":"elliptical","x":2,"y":0,"r":2}],"allow":0,"count":4,"complete":true,"searched":2,"verified":true},"4-8":{"name":"Telephoto","min":2,"sol":[{"t":"convexmirror","x":3,"y":0,"r":3},{"t":"convex","x":3,"y":1,"r":2}],"allow":0,"count":1,"complete":true,"searched":2,"verified":true},"4-9":{"name":"Relay Mirrors","min":2,"sol":[{"t":"concavemirror","x":4,"y":1,"r":3},{"t":"concavemirror","x":4,"y":5,"r":5}],"allow":0,"count":1,"complete":true,"searched":2,"verified":true},"4-10":{"name":"Searchlight","min":2,"sol":[{"t":"concavemirror","x":1,"y":2,"r":7},{"t":"splitter","x":4,"y":2,"r":1}],"allow":0,"count":1,"complete":true,"searched":2,"verified":true},"4-11":{"name":"Two Foci","min":3,"sol":[{"t":"splitter","x":1,"y":4,"r":1},{"t":"parabolic","x":6,"y":4,"r":3},{"t":"elliptical","x":1,"y":7,"r":6}],"allow":0,"count":4,"complete":true,"searched":3,"verified":true},"4-12":{"name":"Twin Telescope","min":4,"sol":[{"t":"splitter","x":1,"y":0,"r":1},{"t":"parabolic","x":5,"y":0,"r":3},{"t":"concavemirror","x":5,"y":5,"r":5},{"t":"concavemirror","x":1,"y":4,"r":7}],"allow":0,"count":2,"complete":false,"searched":3,"verified":true},"5-1":{"name":"Split White","min":1,"sol":[{"t":"spectrum","x":2,"y":4,"r":0}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"5-2":{"name":"Coloured Glass","min":3,"sol":[{"t":"filterR","x":1,"y":2,"r":0},{"t":"filterB","x":1,"y":6,"r":0},{"t":"mirror","x":4,"y":6,"r":3}],"allow":0,"count":28,"complete":true,"searched":3,"verified":true},"5-3":{"name":"Pick a Colour","min":2,"sol":[{"t":"dichroG","x":3,"y":4,"r":3},{"t":"dichroR","x":5,"y":4,"r":1}],"allow":0,"count":1,"complete":true,"searched":2,"verified":true},"5-4":{"name":"Make White","min":2,"sol":[{"t":"dichroG","x":4,"y":4,"r":1},{"t":"dichroB","x":5,"y":4,"r":3}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"5-5":{"name":"Blue Bends Most","min":2,"sol":[{"t":"spectrum","x":1,"y":1,"r":0},{"t":"mirror","x":1,"y":7,"r":1}],"allow":0,"count":1,"complete":true,"searched":2,"verified":true},"5-6":{"name":"Red and Blue","min":3,"sol":[{"t":"spectrum","x":3,"y":6,"r":1},{"t":"dichroR","x":4,"y":6,"r":3},{"t":"dichroB","x":3,"y":5,"r":3}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"5-7":{"name":"Filtered","min":3,"sol":[{"t":"dichroR","x":4,"y":5,"r":3},{"t":"filterB","x":4,"y":4,"r":0},{"t":"spectrum","x":4,"y":3,"r":0}],"allow":1,"count":1,"complete":true,"searched":3,"verified":true},"5-8":{"name":"Three Prisms","min":3,"sol":[{"t":"spectrum","x":6,"y":4,"r":0},{"t":"spectrum","x":5,"y":5,"r":0},{"t":"spectrum","x":4,"y":4,"r":1}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"5-9":{"name":"Split Decision","min":3,"sol":[{"t":"splitter","x":3,"y":5,"r":3},{"t":"spectrum","x":1,"y":5,"r":0},{"t":"dichroR","x":0,"y":5,"r":3}],"allow":1,"count":1,"complete":true,"searched":3,"verified":true},"5-10":{"name":"Rainbow Road","min":3,"sol":[{"t":"mirror","x":4,"y":2,"r":3},{"t":"spectrum","x":4,"y":6,"r":1},{"t":"dichroR","x":4,"y":7,"r":1}],"allow":2,"count":1,"complete":true,"searched":3,"verified":true},"5-11":{"name":"Green Light","min":4,"sol":[{"t":"dichroG","x":4,"y":1,"r":1},{"t":"mirror","x":4,"y":2,"r":3},{"t":"spectrum","x":3,"y":2,"r":0},{"t":"mirror","x":0,"y":2,"r":1}],"allow":0,"count":1,"complete":true,"searched":4,"verified":true},"5-12":{"name":"Spectrograph","min":4,"sol":[{"t":"dichroG","x":1,"y":4,"r":3},{"t":"spectrum","x":1,"y":3,"r":0},{"t":"spectrum","x":3,"y":4,"r":1},{"t":"dichroR","x":6,"y":4,"r":1}],"allow":1,"count":2,"complete":true,"searched":4,"verified":true},"6-1":{"name":"Past the Critical Angle","min":1,"sol":[{"t":"critical","x":4,"y":2,"r":3}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"6-2":{"name":"Glass, Not Water","min":2,"sol":[{"t":"critical","x":1,"y":1,"r":3},{"t":"rightprism","x":1,"y":6,"r":7}],"allow":1,"count":18,"complete":true,"searched":2,"verified":true},"6-3":{"name":"Two at Once","min":1,"sol":[{"t":"critical","x":3,"y":4,"r":0}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"6-4":{"name":"Fibre Run","min":1,"sol":[{"t":"mirror","x":2,"y":1,"r":1}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"6-5":{"name":"Total Reflection","min":3,"sol":[{"t":"critical","x":5,"y":7,"r":1},{"t":"critical","x":5,"y":8,"r":5},{"t":"critical","x":3,"y":8,"r":7}],"allow":0,"count":4,"complete":true,"searched":3,"verified":true},"6-6":{"name":"Glass Mirrors","min":3,"sol":[{"t":"critical","x":5,"y":6,"r":1},{"t":"critical","x":5,"y":7,"r":5},{"t":"rightprism","x":4,"y":7,"r":7}],"allow":0,"count":6,"complete":true,"searched":3,"verified":true},"6-7":{"name":"Fibre Optic","min":3,"sol":[{"t":"critical","x":5,"y":7,"r":7},{"t":"critical","x":5,"y":6,"r":1},{"t":"mirror","x":6,"y":6,"r":3}],"allow":0,"count":6,"complete":true,"searched":3,"verified":true},"6-8":{"name":"Patch Cable","min":3,"sol":[{"t":"critical","x":5,"y":7,"r":5},{"t":"critical","x":5,"y":4,"r":3},{"t":"splitter","x":3,"y":4,"r":1}],"allow":0,"count":3,"complete":true,"searched":3,"verified":true},"6-9":{"name":"Junction Box","min":3,"sol":[{"t":"critical","x":5,"y":7,"r":1},{"t":"critical","x":6,"y":7,"r":5},{"t":"splitter","x":6,"y":2,"r":1}],"allow":0,"count":2,"complete":true,"searched":3,"verified":true},"6-10":{"name":"Exchange","min":3,"sol":[{"t":"splitter","x":1,"y":5,"r":1},{"t":"critical","x":2,"y":5,"r":3},{"t":"critical","x":2,"y":8,"r":7}],"allow":0,"count":2,"complete":true,"searched":3,"verified":true},"6-11":{"name":"Switchback","min":4,"sol":[{"t":"critical","x":5,"y":5,"r":1},{"t":"mirror","x":1,"y":1,"r":3},{"t":"critical","x":0,"y":1,"r":7},{"t":"critical","x":5,"y":6,"r":5}],"allow":0,"count":23,"complete":false,"searched":3,"verified":true},"6-12":{"name":"Light Pipe","min":4,"sol":[{"t":"critical","x":5,"y":7,"r":1},{"t":"critical","x":1,"y":5,"r":3},{"t":"critical","x":6,"y":7,"r":3},{"t":"mirror","x":1,"y":8,"r":3}],"allow":0,"count":21,"complete":false,"searched":3,"verified":true},"7-1":{"name":"Ball Lens","min":1,"sol":[{"t":"convex","x":1,"y":4,"r":0}],"allow":0,"count":2,"complete":true,"searched":1,"verified":true},"7-2":{"name":"Glass Case","min":1,"sol":[{"t":"fresnel","x":1,"y":2,"r":0}],"allow":0,"count":1,"complete":true,"searched":1,"verified":true},"7-3":{"name":"Strong and Weak","min":2,"sol":[{"t":"aspheric","x":1,"y":2,"r":0},{"t":"posmeniscus","x":2,"y":6,"r":0}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"7-4":{"name":"Projector","min":1,"sol":[{"t":"convex","x":2,"y":4,"r":0}],"allow":0,"count":2,"complete":true,"searched":1,"verified":true},"7-5":{"name":"Meniscus","min":2,"sol":[{"t":"negmeniscus","x":1,"y":4,"r":0},{"t":"convex","x":2,"y":4,"r":0}],"allow":1,"count":1,"complete":true,"searched":2,"verified":true},"7-6":{"name":"Zoom","min":2,"sol":[{"t":"posmeniscus","x":1,"y":1,"r":0},{"t":"planoconvex","x":2,"y":6,"r":0}],"allow":1,"count":10,"complete":true,"searched":2,"verified":true},"7-7":{"name":"Beam Reducer","min":2,"sol":[{"t":"convex","x":1,"y":4,"r":0},{"t":"aspheric","x":4,"y":4,"r":0}],"allow":0,"count":1,"complete":true,"searched":2,"verified":true},"7-8":{"name":"Folded Telescope","min":2,"sol":[{"t":"mirror","x":4,"y":1,"r":1},{"t":"convex","x":4,"y":4,"r":2}],"allow":0,"count":2,"complete":true,"searched":2,"verified":true},"7-9":{"name":"Periscope","min":3,"sol":[{"t":"mirror","x":5,"y":7,"r":3},{"t":"planoconvex","x":5,"y":3,"r":2},{"t":"mirror","x":5,"y":1,"r":3}],"allow":0,"count":2,"complete":true,"searched":3,"verified":true},"7-10":{"name":"Long and Short","min":3,"sol":[{"t":"splitter","x":1,"y":1,"r":1},{"t":"posmeniscus","x":2,"y":1,"r":0},{"t":"aspheric","x":1,"y":2,"r":2}],"allow":0,"count":1,"complete":true,"searched":3,"verified":true},"7-11":{"name":"Two Telescopes","min":4,"sol":[{"t":"convex","x":1,"y":1,"r":0},{"t":"aspheric","x":4,"y":1,"r":0},{"t":"aspheric","x":1,"y":6,"r":0},{"t":"ball","x":3,"y":6,"r":0}],"allow":0,"count":3,"complete":true,"searched":4,"verified":true},"7-12":{"name":"Instrument Maker","min":4,"sol":[{"t":"splitter","x":1,"y":0,"r":1},{"t":"concavemirror","x":4,"y":0,"r":3},{"t":"aspheric","x":4,"y":3,"r":2},{"t":"planoconvex","x":1,"y":2,"r":2}],"allow":1,"count":4,"complete":false,"searched":3,"verified":true},"8-1":{"name":"Prologue","min":3,"sol":[{"t":"critical","x":3,"y":3,"r":1},{"t":"block","x":2,"y":7,"r":3},{"t":"splitter","x":2,"y":4,"r":3}],"allow":0,"count":6,"complete":true,"searched":3,"verified":true},"8-2":{"name":"Detour Through Glass","min":3,"sol":[{"t":"critical","x":3,"y":3,"r":5},{"t":"block","x":0,"y":7,"r":3},{"t":"rightprism","x":0,"y":5,"r":1}],"allow":0,"count":8,"complete":true,"searched":3,"verified":true},"8-3":{"name":"Red Shift","min":3,"sol":[{"t":"rightprism","x":5,"y":0,"r":1},{"t":"dichroR","x":3,"y":6,"r":3},{"t":"spectrum","x":3,"y":7,"r":0}],"allow":1,"count":2,"complete":false,"searched":2,"verified":true},"8-4":{"name":"Four Corners","min":3,"sol":[{"t":"spectrum","x":2,"y":3,"r":1},{"t":"critical","x":2,"y":1,"r":5},{"t":"mirror","x":2,"y":7,"r":3}],"allow":0,"count":9,"complete":false,"searched":2,"verified":true},"8-5":{"name":"Constellation","min":3,"sol":[{"t":"rightprism","x":2,"y":5,"r":3},{"t":"spectrum","x":2,"y":6,"r":0},{"t":"mirror","x":2,"y":4,"r":3}],"allow":1,"count":7,"complete":false,"searched":2,"verified":true},"8-6":{"name":"Prism Break","min":4,"sol":[{"t":"spectrum","x":5,"y":1,"r":1},{"t":"spectrum","x":3,"y":3,"r":0},{"t":"mirror","x":5,"y":2,"r":3},{"t":"rightprism","x":3,"y":2,"r":0}],"allow":0,"count":22,"complete":false,"searched":3,"verified":true},"8-7":{"name":"Critical Mass","min":4,"sol":[{"t":"critical","x":1,"y":1,"r":3},{"t":"critical","x":1,"y":2,"r":7},{"t":"spectrum","x":3,"y":2,"r":1},{"t":"rightprism","x":4,"y":2,"r":5}],"allow":2,"count":3,"complete":false,"searched":3,"verified":true},"8-8":{"name":"Cascade","min":4,"sol":[{"t":"critical","x":1,"y":4,"r":5},{"t":"rightprism","x":5,"y":4,"r":1},{"t":"mirror","x":5,"y":5,"r":3},{"t":"spectrum","x":3,"y":5,"r":1}],"allow":0,"count":6,"complete":false,"searched":3,"verified":true},"8-9":{"name":"Clockwork","min":4,"sol":[{"t":"block","x":0,"y":1,"r":3},{"t":"spectrum","x":5,"y":5,"r":1},{"t":"mirror","x":4,"y":5,"r":1},{"t":"rightprism","x":4,"y":2,"r":1}],"allow":0,"count":6,"complete":false,"searched":3,"verified":true},"8-10":{"name":"Glass Labyrinth","min":4,"sol":[{"t":"rightprism","x":1,"y":2,"r":3},{"t":"splitter","x":1,"y":3,"r":1},{"t":"rightprism","x":1,"y":4,"r":7},{"t":"block","x":2,"y":3,"r":1}],"allow":0,"count":15,"complete":true,"searched":4,"verified":true},"8-11":{"name":"White Out","min":4,"sol":[{"t":"spectrum","x":5,"y":4,"r":0},{"t":"rightprism","x":2,"y":4,"r":7},{"t":"critical","x":4,"y":3,"r":0},{"t":"spectrum","x":5,"y":3,"r":1}],"allow":0,"count":2,"complete":false,"searched":3,"verified":true},"8-12":{"name":"Final Light","min":4,"sol":[{"t":"rightprism","x":1,"y":5,"r":5},{"t":"block","x":1,"y":4,"r":3},{"t":"splitter","x":1,"y":1,"r":1},{"t":"rightprism","x":1,"y":0,"r":1}],"allow":0,"count":6,"complete":false,"searched":3,"verified":true}};
 </script>
 <script>
 (function () {
@@ -813,12 +978,7 @@ const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAl
 const DPR = Math.min(window.devicePixelRatio || 1, 3);
 
 /* ---------- future packs (shown, not yet playable) ---------- */
-const FUTURE = [
-  { name: 'SPECTRUM', sub: 'Coloured light, white light and dispersion' },
-  { name: 'GUIDE', sub: 'Fibres, light pipes and the critical angle' },
-  { name: 'INSTRUMENT', sub: 'Telescopes, periscopes and compound optics' },
-  { name: 'MASTERY', sub: 'Every piece, no mercy' },
-];
+const FUTURE = [];
 
 /* ---------- persistence ---------- */
 const KEY = 'beams.save.v1';
@@ -854,6 +1014,7 @@ const sfx = {
 
 /* ---------- colours ---------- */
 const BEAM = { 8: ['255,196,64', '255,236,180'], 1: ['255,70,90', '255,200,205'], 2: ['60,255,140', '200,255,220'], 4: ['70,150,255', '205,225,255'], 7: ['235,235,255', '255,255,255'] };
+const FIBRE_COL = ['64,224,255', '255,120,220', '160,255,90', '255,170,60'];
 const TGT = { Y: '255,207,92', R: '255,70,90', G: '60,255,140', B: '70,150,255', W: '235,235,255' };
 
 /* ---------- drawing pieces (local cell units, +x = facing) ---------- */
@@ -936,6 +1097,45 @@ function drawPiece(ctx, it, t, opts) {
       ctx.strokeStyle = 'rgba(64,224,255,.12)'; ctx.beginPath(); ctx.moveTo(-0.44, -0.44); ctx.lineTo(0.44, 0.44); ctx.moveTo(0.44, -0.44); ctx.lineTo(-0.44, 0.44); ctx.stroke();
       break;
     }
+    case 'spectrum': {
+      ctx.save(); if ((it.r || 0) === 1) ctx.scale(1, -1);
+      ctx.beginPath(); ctx.moveTo(-0.34, 0.27); ctx.lineTo(0.34, 0.27); ctx.lineTo(0, -0.33); ctx.closePath();
+      glassFill(ctx); glassEdge(ctx, 0.75);
+      const sp = ['255,70,90', '60,255,140', '70,150,255'];
+      sp.forEach((c, k) => { ctx.strokeStyle = 'rgba(' + c + ',.55)'; ctx.lineWidth = 0.025; ctx.beginPath(); ctx.moveTo(-0.12 + k * 0.08, 0.2); ctx.lineTo(0.02 + k * 0.08, -0.12); ctx.stroke(); });
+      ctx.restore(); break;
+    }
+    case 'filterR': case 'filterG': case 'filterB': {
+      const col = TGT[it.t.slice(-1)];
+      ctx.beginPath(); roundRect(ctx, -0.3, -0.3, 0.6, 0.6, 0.08); ctx.fillStyle = 'rgba(' + col + ',.22)'; ctx.fill();
+      ctx.strokeStyle = 'rgba(' + col + ',.85)'; ctx.lineWidth = 0.03; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-0.18, -0.22); ctx.lineTo(-0.05, -0.22); ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 0.02; ctx.stroke();
+      break;
+    }
+    case 'dichroR': case 'dichroG': case 'dichroB': {
+      const col = TGT[it.t.slice(-1)];
+      ctx.save(); ctx.rotate(Math.PI / 4);
+      ctx.beginPath(); ctx.rect(-0.28, -0.28, 0.56, 0.56); ctx.fillStyle = 'rgba(14,16,20,.55)'; ctx.fill(); glassEdge(ctx, 0.3);
+      ctx.restore();
+      ctx.lineCap = 'round'; ctx.strokeStyle = 'rgba(' + col + ',.95)'; ctx.lineWidth = 0.05; ctx.beginPath(); ctx.moveTo(-0.4, 0); ctx.lineTo(0.4, 0); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 0.015; ctx.stroke();
+      break;
+    }
+    case 'critical': case 'water': {
+      ctx.beginPath(); ctx.moveTo(-0.08, -0.4); ctx.arc(-0.08, 0, 0.4, -Math.PI / 2, Math.PI / 2); ctx.closePath();
+      if (it.t === 'water') { ctx.fillStyle = 'rgba(40,120,200,.28)'; ctx.fill(); ctx.strokeStyle = 'rgba(120,190,255,.8)'; ctx.lineWidth = 0.022; ctx.stroke(); }
+      else { glassFill(ctx); glassEdge(ctx, 0.75); }
+      ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 0.03; ctx.beginPath(); ctx.moveTo(-0.08, -0.4); ctx.lineTo(-0.08, 0.4); ctx.stroke();
+      break;
+    }
+    case 'fibre': {
+      const pc = FIBRE_COL[(it.p || 0) % FIBRE_COL.length];
+      ctx.fillStyle = '#121316'; ctx.fillRect(-0.5, -0.11, 0.62, 0.22);
+      ctx.strokeStyle = 'rgba(' + pc + ',.75)'; ctx.lineWidth = 0.025; ctx.strokeRect(-0.5, -0.11, 0.62, 0.22);
+      ctx.beginPath(); ctx.arc(0.18, 0, 0.17, 0, 7); ctx.fillStyle = '#16171a'; ctx.fill(); ctx.strokeStyle = 'rgb(' + pc + ')'; ctx.lineWidth = 0.035; ctx.stroke();
+      ctx.beginPath(); ctx.arc(0.18, 0, 0.06, 0, 7); ctx.fillStyle = 'rgba(' + pc + ',.8)'; ctx.fill();
+      break;
+    }
     case 'jog': { // offset pinhole: gap sits 1/5 cell off centre
       ctx.fillStyle = '#121316'; ctx.strokeStyle = 'rgba(64,224,255,.45)'; ctx.lineWidth = 0.02;
       ctx.fillRect(-0.06, -0.5, 0.12, 0.63); ctx.strokeRect(-0.06, -0.5, 0.12, 0.63);
@@ -1016,13 +1216,20 @@ function drawBoard(ctx, L, items, res, o) {
   if (o.mine) items.forEach((it, i) => { if (o.mine.has(i)) { ctx.fillStyle = i === o.sel ? 'rgba(64,224,255,.12)' : 'rgba(64,224,255,.045)'; ctx.fillRect(it.x + 0.04, it.y + 0.04, 0.92, 0.92); } });
   // armed: show empty cells you can place on
   if (o.armedCells) { ctx.fillStyle = 'rgba(64,224,255,.05)'; for (const k of o.armedCells) { const [x, y] = k.split(',').map(Number); ctx.fillRect(x + 0.3, y + 0.3, 0.4, 0.4); } }
+  // fibre runs: a dashed line between the two ends of each fibre
+  const fib = {}; items.forEach(it => { if (it.t === 'fibre') (fib[it.p] = fib[it.p] || []).push(it); });
+  for (const k in fib) if (fib[k].length === 2) {
+    const [a, b] = fib[k], pc = FIBRE_COL[(+k || 0) % FIBRE_COL.length];
+    ctx.strokeStyle = 'rgba(' + pc + ',.28)'; ctx.lineWidth = 3 / c; ctx.setLineDash([6 / c, 5 / c]);
+    ctx.beginPath(); ctx.moveTo(a.x + 0.5, a.y + 0.5); ctx.lineTo(b.x + 0.5, b.y + 0.5); ctx.stroke(); ctx.setLineDash([]);
+  }
   // static pieces (under beams) — walls, slits, sources
-  items.forEach((it, i) => { if (it.t === 'wall' || it.t === 'slit' || it.t === 'slot' || it.t === 'jog') drawPiece(ctx, it, t); });
+  items.forEach((it, i) => { if (it.t === 'wall' || it.t === 'slit' || it.t === 'slot' || it.t === 'jog' || it.t === 'fibre') drawPiece(ctx, it, t); });
   // beams
   if (res) drawBeams(ctx, res, c, t, o.flash);
   // pieces above beams
   items.forEach((it, i) => {
-    if (it.t === 'wall' || it.t === 'slit' || it.t === 'slot' || it.t === 'jog') return;
+    if (it.t === 'wall' || it.t === 'slit' || it.t === 'slot' || it.t === 'jog' || it.t === 'fibre') return;
     drawPiece(ctx, it, t, { lit: res && it.t === 'target' && res.lit[i] === B.MASK[it.c || 'Y'], rejected: res && res.rejected && res.rejected[i] });
     if (it.fixed && !B.SOURCE_TYPES[it.t] && it.t !== 'target' && o.mine) { // locked tick
       ctx.fillStyle = 'rgba(139,143,152,.6)'; const s = 0.07;
@@ -1108,7 +1315,7 @@ function drawBeams(ctx, res, c, t, flash) {
 function path(ctx, pts) { ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y); }
 
 /* piece icon into a small canvas */
-const DEFAULT_ROT = { mirror: 1, splitter: 1, corner: 4, wedge: 4, concavemirror: 4, convexmirror: 4, parabolic: 4, elliptical: 4, rightprism: 4, prism: 7 };
+const DEFAULT_ROT = { dichroR: 1, dichroG: 1, dichroB: 1, mirror: 1, splitter: 1, corner: 4, wedge: 4, concavemirror: 4, convexmirror: 4, parabolic: 4, elliptical: 4, rightprism: 4, prism: 7 };
 function icon(cv, type, r, size) {
   const s = size || 46; cv.width = s * DPR; cv.height = s * DPR;
   const ctx = cv.getContext('2d'); ctx.setTransform(DPR * s, 0, 0, DPR * s, 0, 0);
@@ -1338,9 +1545,9 @@ function liftSelected() { // a placed piece becomes a staged preview so it can b
 function rotate(dir) {
   const tgt = rotTarget(); if (!tgt) return;
   if (tgt === 'sel') liftSelected();
-  if (tgt === 'armed') { game.trayRot[game.armed] = ((game.trayRot[game.armed] + dir) % 8 + 8) % 8; sfx.rot(); renderTray(); return; }
+  if (tgt === 'armed') { { const D = B.P[game.armed].rot; game.trayRot[game.armed] = ((game.trayRot[game.armed] + dir) % D + D) % D; } sfx.rot(); renderTray(); return; }
   const p = game.pending; p.r = ((p.r + dir) % 8 + 8) % 8;
-  if (B.P[p.t].rot === 4 && dir > 0 && p.r >= 4) p.r -= 4; else if (B.P[p.t].rot === 4 && dir < 0 && p.r >= 4) p.r -= 4;
+  p.r = ((p.r % B.P[p.t].rot) + B.P[p.t].rot) % B.P[p.t].rot;
   if (!p.orig) game.trayRot[p.t] = p.r;
   sfx.rot(); previewTrace(); renderTray();
 }
@@ -1412,7 +1619,7 @@ function dragEnd() {
       if (game.armed === drag.type) {
         if (game.pending && !game.pending.orig && game.pending.t === drag.type) { rotate(1); return; }
         const D = B.P[drag.type].rot; if (D === 1) return;
-        let r = (game.trayRot[drag.type] + 1) % 8; if (D === 4 && r >= 4) r -= 4;
+        let r = (game.trayRot[drag.type] + 1) % D; // only the orientations that behave differently
         game.trayRot[drag.type] = r; sfx.rot(); renderTray(); return;
       }
       if (game.pending && !game.pending.orig) game.pending = null; else if (game.pending) cancelPending();
@@ -1547,8 +1754,8 @@ const LAB = [
   { sec: 'Mirrors', id: 'mirror', pack: 1, items: [{ t: 'mirror', x: 3, y: 2, r: 1, play: 1 }], src: 'bundle' },
   { sec: 'Mirrors', id: 'splitter', pack: 1, items: [{ t: 'splitter', x: 3, y: 2, r: 1, play: 1 }], src: 'bundle' },
   { sec: 'Mirrors', id: 'periscope', name: 'Periscope', pack: 1, desc: 'Two parallel mirrors shift a beam sideways without changing its direction.', items: [{ t: 'mirror', x: 2, y: 3, r: 3, play: 1 }, { t: 'mirror', x: 2, y: 1, r: 3, play: 1 }], src: 'bundle', sy: 3 },
-  { sec: 'Mirrors', id: 'corner', pack: 7, items: [{ t: 'corner', x: 4, y: 2, r: 0, play: 1 }], src: 'bundle' },
-  { sec: 'Mirrors', id: 'wedge', pack: 7, items: [{ t: 'wedge', x: 4, y: 2, r: 0, play: 1 }], src: 'bundle' },
+  { sec: 'Mirrors', id: 'corner', pack: 0, items: [{ t: 'corner', x: 4, y: 2, r: 0, play: 1 }], src: 'laser' },
+  { sec: 'Mirrors', id: 'wedge', pack: 0, items: [{ t: 'wedge', x: 4, y: 2, r: 0, play: 1 }], src: 'bundle' },
   { sec: 'Lenses', id: 'convex', pack: 2, items: [{ t: 'convex', x: 2, y: 2, r: 0, play: 1 }], src: 'bundle' },
   { sec: 'Lenses', id: 'concave', pack: 2, items: [{ t: 'concave', x: 2, y: 2, r: 0, play: 1 }], src: 'bundle' },
   { sec: 'Lenses', id: 'planoconvex', pack: 2, items: [{ t: 'planoconvex', x: 2, y: 2, r: 0, play: 1 }], src: 'bundle' },
@@ -1558,7 +1765,7 @@ const LAB = [
   { sec: 'Lenses', id: 'ball', pack: 7, items: [{ t: 'ball', x: 2, y: 2, r: 0, play: 1 }], src: 'bundle' },
   { sec: 'Lenses', id: 'aspheric', pack: 7, items: [{ t: 'aspheric', x: 2, y: 2, r: 0, play: 1 }], src: 'bundle' },
   { sec: 'Lenses', id: 'fresnel', pack: 7, items: [{ t: 'fresnel', x: 2, y: 2, r: 0, play: 1 }], src: 'bundle' },
-  { sec: 'Lenses', id: 'microlens', pack: 7, items: [{ t: 'microlens', x: 2, y: 2, r: 0, play: 1 }], src: 'bundle' },
+  { sec: 'Lenses', id: 'microlens', pack: 0, items: [{ t: 'microlens', x: 2, y: 2, r: 0, play: 1 }], src: 'bundle' },
   { sec: 'Lenses', id: 'bulblens', name: 'Bulb and lens', pack: 2, desc: 'A point of light placed at a lens’s focal point leaves as a parallel beam. Move it further away and the lens forms an image instead.', items: [{ t: 'convex', x: 2, y: 2, r: 0, play: 1 }], src: 'bulb', sx: 0 },
   { sec: 'Curved mirrors', id: 'concavemirror', pack: 4, items: [{ t: 'concavemirror', x: 3, y: 2, r: 3, play: 1 }, { t: 'target', x: 3, y: 4, s: 'focus', fixed: true }], src: 'bundle' },
   { sec: 'Curved mirrors', id: 'convexmirror', pack: 4, items: [{ t: 'convexmirror', x: 3, y: 2, r: 3, play: 1 }], src: 'bundle' },
@@ -1567,9 +1774,14 @@ const LAB = [
   { sec: 'Glass and prisms', id: 'plate', pack: 3, items: [{ t: 'plate', x: 3, y: 2, r: 1, play: 1 }], src: 'laser' },
   { sec: 'Glass and prisms', id: 'block', pack: 3, items: [{ t: 'block', x: 2, y: 2, r: 1, play: 1 }, { t: 'jog', x: 4, y: 2, r: 0, fixed: true }], src: 'laser' },
   { sec: 'Glass and prisms', id: 'rightprism', pack: 3, items: [{ t: 'rightprism', x: 3, y: 2, r: 3, play: 1 }], src: 'laser' },
-  { sec: 'Glass and prisms', id: 'prism', pack: 5, items: [{ t: 'prism', x: 3, y: 2, r: 1, play: 1 }], src: 'white' },
-  { sec: 'Glass and prisms', id: 'newton', name: 'Newton’s Prisms', pack: 5, desc: 'One prism spreads white light into colours; a second, turned the other way, pulls them back together.', items: [{ t: 'prism', x: 2, y: 2, r: 1, play: 1 }, { t: 'prism', x: 4, y: 3, r: 5, play: 1 }], src: 'white', sy: 2, h: 6 },
+  { sec: 'Colour', id: 'spectrum', pack: 5, items: [{ t: 'spectrum', x: 2, y: 2, r: 0, play: 1 }], src: 'white' },
+  { sec: 'Colour', id: 'filterR', pack: 5, items: [{ t: 'filterR', x: 3, y: 2, play: 1 }], src: 'white' },
+  { sec: 'Colour', id: 'dichroG', pack: 5, items: [{ t: 'dichroG', x: 3, y: 2, r: 3, play: 1 }], src: 'white' },
+  { sec: 'Guides', id: 'critical', pack: 6, items: [{ t: 'critical', x: 3, y: 2, r: 3, play: 1 }], src: 'laser' },
+  { sec: 'Guides', id: 'water', pack: 6, items: [{ t: 'water', x: 3, y: 2, r: 3, play: 1 }], src: 'laser' },
+  { sec: 'Guides', id: 'fibre', pack: 6, items: [{ t: 'fibre', x: 4, y: 2, r: 4, p: 1, fixed: true }, { t: 'fibre', x: 2, y: 0, r: 6, p: 1, fixed: true }], src: 'laser' },
   { sec: 'Instruments', id: 'kepler', name: 'Keplerian Telescope', pack: 7, desc: 'Two converging lenses spaced by the sum of their focal lengths: parallel in, parallel out, flipped upside down.', items: [{ t: 'convex', x: 1, y: 2, r: 0, play: 1 }, { t: 'convex', x: 5, y: 2, r: 0, play: 1 }], src: 'bundle', w: 8 },
+  { sec: 'Instruments', id: 'reducer', name: 'Beam Reducer', pack: 7, desc: 'A long-focus lens then a short-focus lens, spaced by both focal lengths: the beam comes out parallel and half as wide.', items: [{ t: 'convex', x: 1, y: 2, r: 0, play: 1 }, { t: 'aspheric', x: 4, y: 2, r: 0, play: 1 }], src: 'bundle' },
   { sec: 'Instruments', id: 'galileo', name: 'Galilean Telescope', pack: 7, desc: 'A diverging lens before a converging one widens a beam without flipping it.', items: [{ t: 'concave', x: 2, y: 2, r: 0, play: 1 }, { t: 'convex', x: 3, y: 2, r: 0, play: 1 }], src: 'bundle', narrow: 1 },
 ];
 LAB.forEach(e => { const d = B.P[e.id]; e.name = e.name || (d && d.name); e.desc = e.desc || (d && d.desc); });
@@ -1581,7 +1793,7 @@ function renderLab() {
     const b = document.createElement('button'); b.className = 'litem';
     const c = document.createElement('canvas');
     b.appendChild(c); icon(c, e.items[0].t, e.items[0].r, 52);
-    b.insertAdjacentHTML('beforeend', '<div><b>' + e.name + '</b><small>' + e.desc + '</small></div><div class="tagp">pack ' + e.pack + (e.pack > PACKS.length ? ' · soon' : '') + '</div>');
+    b.insertAdjacentHTML('beforeend', '<div><b>' + e.name + '</b><small>' + e.desc + '</small></div><div class="tagp">' + (e.pack ? 'pack ' + e.pack + (e.pack > PACKS.length ? ' · soon' : '') : 'Lab only') + '</div>');
     b.addEventListener('click', () => openBench(e));
     el.appendChild(b);
   });
@@ -1592,7 +1804,7 @@ let braf = 0;
 function openBench(e) {
   bench.on = true; bench.e = e; bench.src = e.src; bench.L = { w: e.w || 7, h: (e.h || 5) + 2 };
   bench.pieces = e.items.map(it => Object.assign({}, it, { y: it.y + 1 }));
-  $('#bn-title').textContent = e.name; $('#bn-sub').textContent = 'Pack ' + e.pack + (e.pack > PACKS.length ? ' · coming soon' : '');
+  $('#bn-title').textContent = e.name; $('#bn-sub').textContent = e.pack ? 'Pack ' + e.pack + (e.pack > PACKS.length ? ' · coming soon' : '') : 'Lab only';
   $('#bn-desc').textContent = e.desc;
   const d = B.P[e.items[0].t];
   $('#bn-facts').textContent = d && d.f != null && !e.name.includes('Telescope') ? 'Focal length ' + (d.f > 0 ? '' : '−') + Math.abs(d.f) + (Math.abs(d.f) === 1 ? ' cell' : ' cells') + (d.f < 0 ? ' (virtual)' : '') : '';
