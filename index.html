@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="app-repo" content="BEAMS">
-<meta name="app-version" content="0.1.5">
+<meta name="app-version" content="0.1.6">
 <meta name="theme-color" content="#16171a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1451,7 +1451,8 @@ function loop() {
     const t = ts / 1000;
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     const ghost = drag.ghost || (game.pending ? { it: game.pending, valid: true } : null);
-    drawBoard(ctx, game.L, game.items, shownRes(), { cell, t, sel: game.pending ? null : game.sel, ghost, mine: mineSet(), alarm: game.alarmFx });
+    const si = game.sel ? game.items.indexOf(game.sel) : -1;
+    drawBoard(ctx, game.L, game.items, shownRes(), { cell, t, sel: game.pending || si < 0 ? null : si, ghost, mine: mineSet(), alarm: game.alarmFx });
     raf = requestAnimationFrame(tick);
   };
   raf = requestAnimationFrame(tick);
@@ -1459,7 +1460,8 @@ function loop() {
 
 /* tray */
 function trayLeft(type) {
-  return (game.L.tray[type] || 0) - game.mine.filter(m => m.t === type).length - (game.pending && game.pending.t === type && !game.pending.orig ? 1 : 0);
+  // a staged piece and a lifted piece are both out of the tray
+  return (game.L.tray[type] || 0) - game.mine.filter(m => m.t === type).length - (game.pending && game.pending.t === type ? 1 : 0);
 }
 function renderTray() {
   const el = $('#tray'); el.innerHTML = '';
@@ -1478,7 +1480,7 @@ function renderTray() {
 }
 function rotTarget() {
   if (game.pending) return 'pending';
-  if (game.sel != null && game.sel >= game.base.length && B.P[game.items[game.sel].t].rot > 1) return 'sel';
+  if (game.sel && game.mine.includes(game.sel) && B.P[game.sel.t].rot > 1) return 'sel';
   if (game.armed && B.P[game.armed].rot > 1) return 'armed';
   return null;
 }
@@ -1538,7 +1540,7 @@ function cancelPending() {
   retrace(); renderTray();
 }
 function liftSelected() { // a placed piece becomes a staged preview so it can be turned without counting
-  const mi = game.sel - game.base.length, m = game.mine.splice(mi, 1)[0];
+  const m = game.mine.splice(game.mine.indexOf(game.sel), 1)[0];
   game.pending = { t: m.t, x: m.x, y: m.y, r: m.r, orig: m }; game.sel = null;
   retrace();
 }
@@ -1574,7 +1576,11 @@ function updateStatus() {
 
 /* pointer handling */
 const ghostCv = $('#ghost'), gctx = ghostCv.getContext('2d');
-const drag = { on: false, from: null, type: null, idx: null, sx: 0, sy: 0, moved: false, ghost: null, preview: null, r: 0, lp: 0 };
+const drag = { on: false, from: null, type: null, idx: null, sx: 0, sy: 0, moved: false, ghost: null, preview: null, r: 0, lp: 0, pend: null, orig: null };
+function startDrag(o) { // a fresh record per gesture, so nothing from the last drag can leak into this one
+  clearTimeout(drag.lp);
+  Object.assign(drag, { on: true, from: null, type: null, idx: null, moved: false, ghost: null, preview: null, r: 0, pend: null, orig: null }, o);
+}
 function boardCell(e) {
   const r = cv.getBoundingClientRect();
   const x = (e.clientX - r.left) / cell, y = (e.clientY - r.top) / cell;
@@ -1593,8 +1599,8 @@ function dragMove(e) {
   if (!drag.on) return;
   if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 8) {
     drag.moved = true; clearTimeout(drag.lp);
-    if (drag.from === 'board') { const m = game.mine.splice(drag.idx - game.base.length, 1)[0]; drag.type = m.t; drag.r = m.r; drag.orig = m; game.sel = null; retrace(); }
-    if (drag.from === 'pending') { drag.type = game.pending.t; drag.r = game.pending.r; drag.pend = game.pending; game.pending = null; retrace(); }
+    if (drag.from === 'board') { const m = game.mine.splice(game.mine.indexOf(drag.piece), 1)[0]; drag.type = m.t; drag.r = m.r; drag.orig = m; game.sel = null; retrace(); }
+    if (drag.from === 'pending') { drag.type = drag.pend.t; drag.r = drag.pend.r; game.pending = null; retrace(); }
   }
   if (!drag.moved) return;
   const bc = boardCell({ clientX: e.clientX, clientY: e.clientY - (e.pointerType === 'touch' ? 44 : 0) });
@@ -1629,15 +1635,18 @@ function dragEnd() {
     return;
   }
   if (drag.from === 'pending') {
-    if (!drag.moved) { game.pending = drag.pend || game.pending; rotate(1); return; } // tap the staged piece to turn it; PLACE commits
-    if (at) { game.pending = Object.assign(drag.pend, { x: at.x, y: at.y }); }
-    else { game.pending = drag.pend; cancelPending(); return; } // dragged off the board: put it back
-    previewTrace(); renderTray(); return;
+    if (!drag.moved) { rotate(1); return; } // tap the staged piece to turn it; PLACE commits
+    if (at) { game.pending = Object.assign(drag.pend, { x: at.x, y: at.y }); previewTrace(); renderTray(); return; }
+    if (overBoard) { game.pending = drag.pend; previewTrace(); renderTray(); return; } // dropped on a taken cell: stays where it was
+    // dragged off the board: a staged piece just goes back to the tray; a lifted one is removed from the board
+    if (drag.pend.orig) { game.undo.push(JSON.stringify(game.mine.concat([drag.pend.orig]))); game.sel = null; sfx.place(); commit(); }
+    else { retrace(); renderTray(); }
+    return;
   }
   // from a placed piece
   if (!drag.moved) { // first tap selects; tapping it again lifts it into preview and turns it
-    if (game.sel === drag.idx && B.P[game.items[drag.idx].t].rot > 1) { rotate(1); return; }
-    game.sel = drag.idx; game.armed = null; renderTray(); return;
+    if (game.sel === drag.piece && B.P[drag.piece.t].rot > 1) { rotate(1); return; }
+    game.sel = drag.piece; game.armed = null; renderTray(); return;
   }
   game.undo.push(JSON.stringify(game.mine.concat([drag.orig])));
   if (at) { game.mine.push({ t: drag.type, x: at.x, y: at.y, r: drag.r }); sfx.place(); commit(); }
@@ -1651,7 +1660,7 @@ $('#tray').addEventListener('pointerdown', e => {
   clearTimeout(drag.lp);
   const staged = game.pending && !game.pending.orig && game.pending.t === type;
   if (!trayLeft(type) && !staged) { drag.lp = setTimeout(openLab, 550); return; }
-  Object.assign(drag, { on: true, from: 'tray', type, sx: e.clientX, sy: e.clientY, moved: false, r: game.trayRot[type] });
+  startDrag({ from: 'tray', type, sx: e.clientX, sy: e.clientY, r: game.trayRot[type] });
   drag.lp = setTimeout(() => { if (drag.on && !drag.moved) openLab(); }, 550);
   e.preventDefault();
 });
@@ -1659,16 +1668,17 @@ cv.addEventListener('pointerdown', e => {
   if (!game.active) return;
   const bc = boardCell(e); if (!bc.inside) return;
   const occ = occupiedBy(bc.x, bc.y);
-  if (occ === 'pending') { Object.assign(drag, { on: true, from: 'pending', sx: e.clientX, sy: e.clientY, moved: false }); e.preventDefault(); return; }
+  if (occ === 'pending') { startDrag({ from: 'pending', pend: game.pending, sx: e.clientX, sy: e.clientY }); e.preventDefault(); return; }
   if (occ !== null && occ >= game.base.length) {
     if (game.pending) cancelPending();
-    Object.assign(drag, { on: true, from: 'board', idx: game.items.findIndex(it => it.x === bc.x && it.y === bc.y), sx: e.clientX, sy: e.clientY, moved: false }); e.preventDefault(); return;
+    const idx = game.items.findIndex(it => it.x === bc.x && it.y === bc.y);
+    startDrag({ from: 'board', idx, piece: game.items[idx], sx: e.clientX, sy: e.clientY }); e.preventDefault(); return;
   }
   if (occ === null) {
     if (game.pending) { game.pending.x = bc.x; game.pending.y = bc.y; previewTrace(); return; }
     if (game.armed && trayLeft(game.armed)) { game.pending = { t: game.armed, x: bc.x, y: bc.y, r: game.trayRot[game.armed] }; game.sel = null; previewTrace(); renderTray(); return; }
   }
-  if (game.sel != null) { game.sel = null; renderTray(); }
+  if (game.sel) { game.sel = null; renderTray(); }
 });
 window.addEventListener('pointermove', dragMove, { passive: true });
 window.addEventListener('pointerup', dragEnd);
@@ -1691,6 +1701,9 @@ $('#b-reset').addEventListener('click', () => {
   game.mine = []; game.undo = []; game.pending = null; game.sel = null; game.armed = null; game.alarms = 0; game.alarmFx = null;
   retrace(); renderTray(); renderAlarms();
 });
+
+/* read-only window onto the game for the interaction tests */
+window.__BEAMS_TEST = { game, drag, B };
 
 function starsFor(used, alarms) {
   const m = game.meta || {}, extraPieces = m.min != null && used > m.min ? 1 : 0, over = Math.max(0, alarms - (m.allow || 0));
